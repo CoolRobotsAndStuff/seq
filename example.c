@@ -3,6 +3,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #ifndef seq_get_time_ns
 
@@ -32,18 +33,8 @@ SeqThread* seq_current_thread = NULL;
 
 
 bool check_if() {
-    for (size_t i = 0; i < seq_current_thread->if_cache_count; ++i) {
-        if (i == seq_current_thread->if_index) {
-            if (seq_current_thread->if_cache_vals[i] != -1) {
-                puts("cached if value exists");
-            } else {
-                puts("cached if value does not exist");
-            }
-            return (seq_current_thread->if_cache_vals[i] != -1);
-        }
-    }
-    puts("cached if value does not exist");
-    return false;
+    if (seq_current_thread->if_index >= seq_current_thread->if_cache_count) return false; 
+    return (seq_current_thread->if_cache_vals[seq_current_thread->if_index] != -1);
 }
 
 bool increment_if_index() {
@@ -52,20 +43,12 @@ bool increment_if_index() {
 }
 
 bool get_if_result() {
-    for (size_t i = 0; i < seq_current_thread->if_cache_count; ++i) {
-        if (i == seq_current_thread->if_index) {
-            return seq_current_thread->if_cache_vals[i];
-        }
-    }
-    perror("get_if_result");
-    exit(1);
+    assert(seq_current_thread->if_index < seq_current_thread->if_cache_count && "if_index out of range");
+    return seq_current_thread->if_cache_vals[seq_current_thread->if_index];
 }
 
 bool save_if_result(bool cond) {
-    if (seq_current_thread->if_cache_count >= MAX_IF_CACHE) {
-        perror("MAX_IF_CACHE exceeded");
-        exit(1);
-    }
+    assert(seq_current_thread->if_cache_count < MAX_IF_CACHE && "MAX_IF_CACHE exceeded");
 
     seq_current_thread->if_cache_vals   [seq_current_thread->if_cache_count] = cond;
     seq_current_thread->if_cache_indexes[seq_current_thread->if_cache_count] = seq_current_thread->index;
