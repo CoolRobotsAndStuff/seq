@@ -33,8 +33,8 @@ SeqThread* seq_current_thread = NULL;
 
 
 bool check_if() {
-    if (seq_current_thread->if_index >= seq_current_thread->if_cache_count) return false; 
-    return (seq_current_thread->if_cache_vals[seq_current_thread->if_index] != -1);
+    if (seq_current_thread->if_index-1 >= seq_current_thread->if_cache_count) return false; 
+    return (seq_current_thread->if_cache_vals[seq_current_thread->if_index-1] != -1);
 }
 
 bool increment_if_index() {
@@ -43,8 +43,8 @@ bool increment_if_index() {
 }
 
 bool get_if_result() {
-    assert(seq_current_thread->if_index < seq_current_thread->if_cache_count && "if_index out of range");
-    return seq_current_thread->if_cache_vals[seq_current_thread->if_index];
+    assert(seq_current_thread->if_index-1 < seq_current_thread->if_cache_count && "if_index out of range");
+    return seq_current_thread->if_cache_vals[seq_current_thread->if_index-1];
 }
 
 bool save_if_result(bool cond) {
@@ -103,12 +103,11 @@ int seq_check() {
     return 0;
 }
 
-void seq_goto_index(int index) {
+void seq_jump(int index) {
     seq_current_thread->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) { 
         seq_current_thread->counter = index;
     }
-
 }
 
 void seq_sync_both(SeqThread* a, SeqThread* b) {
@@ -133,13 +132,17 @@ void sleep_ms(long ms) {
     usleep(ms * 1000);
 }
 
+
 #define seq if(seq_check())
 
-#define seq_if(cond) if(                      \
-    (                                         \
-        (check_if()  && get_if_result()) ||   \
-        (seq_check() && save_if_result((cond))) \
-    ) && increment_if_index()                 \
+#define seq_if(cond) if(increment_if_index(),                \
+    (                                                        \
+        (check_if() ?                                        \
+            seq_current_thread->index += 1, get_if_result()  \
+            :                                                \
+            seq_check() && save_if_result((cond))            \
+        )                                                    \
+    )                                                        \
 )
 
 #define seq_else else if(check_if() || seq_check())
@@ -170,17 +173,25 @@ int main() {
         T1 seq_start();
         
         seq_if(always_false()) {
-            seq puts("bim");
-            seq_sleep(3)   ;
-            seq puts("bam");
-            seq_sleep(3)   ;
-            seq puts("bum");
-        } seq_else {
             seq puts("three");
-            seq_sleep(1)   ;
+            seq_sleep(3)   ;
             seq puts("two");
-            seq_sleep(2)   ;
+            seq_sleep(3)   ;
             seq puts("one");
+        } seq_else {
+            seq_if(always_false()) {
+                seq puts("bim");
+                seq_sleep(3)   ;
+                seq puts("bam");
+                seq_sleep(3)   ;
+                seq puts("bum");
+            } seq_else {
+                seq puts("whaa");
+                seq_sleep(3)   ;
+                seq puts("whii");
+                seq_sleep(3)   ;
+                seq puts("whoo");
+            }
         }
 
         sleep_ms(500);
