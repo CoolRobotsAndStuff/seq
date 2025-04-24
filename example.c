@@ -23,6 +23,7 @@ typedef struct {
     int index;
     int counter;
     long long delay_start;
+
     int if_index;
     int if_cache_count;
     int if_cache_indexes[MAX_IF_CACHE];
@@ -103,6 +104,29 @@ int seq_check() {
     return 0;
 }
 
+int seq_check_no_counter() {
+    seq_current_thread->index += 1;
+    if (seq_current_thread->index == seq_current_thread->counter) {
+        return 1;
+    }
+    return 0;
+}
+
+void seq_reset() {
+    if (seq_check()) {
+        seq_current_thread->counter = 1;
+        seq_current_thread->delay_start = -1;
+
+        seq_current_thread->if_cache_count = 0;
+        seq_current_thread->if_index = 0;
+        for (size_t i = 0; i < MAX_IF_CACHE; ++i) {
+            seq_current_thread->if_cache_indexes[i] = -1;
+            seq_current_thread->if_cache_vals[i] = -1;
+        }
+    }
+    seq_current_thread->index = 100000000;
+}
+
 void seq_jump(int index) {
     seq_current_thread->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) { 
@@ -110,10 +134,32 @@ void seq_jump(int index) {
     }
 }
 
+void seq_sync_with_other_thread(SeqThread* t) {
+    seq_current_thread->index += 1;
+    t->index += 1;
+    if (seq_current_thread->index == seq_current_thread->counter && t->index == t->counter) {
+        seq_current_thread->counter += 1;
+        t->counter += 1;
+    }
+}
+
+void seq_wait_for_other_thread(SeqThread* t) {
+    seq_current_thread->index += 1;
+    t->index += 1;
+    if (seq_current_thread->index == seq_current_thread->counter) {
+        if (t->counter == t->index) {
+            seq_current_thread->counter += 1;
+            t->counter += 1;
+        } else if (t->counter > t->index) {
+            seq_current_thread->counter += 1;
+        } 
+    }
+}
+
 void seq_sync_both(SeqThread* a, SeqThread* b) {
     a->index += 1;
     b->index += 1;
-    if (a->index == a->counter && b->index == b->counter) { 
+    if (a->counter == a->index && b->counter == b->index ) { 
         a->counter += 1;
         b->counter += 1;
     }
@@ -135,19 +181,16 @@ void sleep_ms(long ms) {
 
 #define seq if(seq_check())
 
-#define seq_if(cond) if(increment_if_index(),                \
-    (                                                        \
-        (check_if() ?                                        \
-            seq_current_thread->index += 1, get_if_result()  \
-            :                                                \
-            seq_check() && save_if_result((cond))            \
-        )                                                    \
-    )                                                        \
+#define seq_if(cond) if(increment_if_index(),            \
+    (check_if() ?                                        \
+        seq_current_thread->index += 1, get_if_result()  \
+        :                                                \
+        seq_check() && save_if_result((cond))            \
+    )                                                    \
 )
 
 #define seq_else else if(check_if() || seq_check())
 #define seq_else_if(cond) seq_else seq_if(cond)
-
 
 bool always_true() {
     puts("evaled always_true!");
@@ -166,25 +209,35 @@ int main() {
     #define T1 seq_current_thread = &thread1;
     #define T2 seq_current_thread = &thread2;
 
+    int x;
     while (1) {
         time_t tick_time = time(NULL);
-        printf("tick: %ld\n", tick_time);
+        //printf("tick: %ld\n", tick_time);
+        puts(".");
+
+
+        T2 seq_start();
+        seq puts("doing");
+        seq_sleep(1)   ;
+        seq puts("some");
+        seq_sleep(1)   ;
+        seq puts("init work");
+        seq x = 0;
 
         T1 seq_start();
-        
-        seq_if(always_false()) {
-            seq puts("three");
-            seq_sleep(3)   ;
-            seq puts("two");
-            seq_sleep(3)   ;
-            seq puts("one");
-        } seq_else {
+            seq_wait_for_other_thread(&thread2);
+            seq x += 1;
             seq_if(always_false()) {
+                seq puts("three");
+                seq_sleep(3)   ;
+                seq puts("two");
+                seq_sleep(3)   ;
+                seq puts("one");
+            } seq_else_if(always_true()) {
                 seq puts("bim");
-                seq_sleep(3)   ;
+                seq_sleep(1)   ;
                 seq puts("bam");
-                seq_sleep(3)   ;
-                seq puts("bum");
+                seq_sleep(1)   ;
             } seq_else {
                 seq puts("whaa");
                 seq_sleep(3)   ;
@@ -192,7 +245,19 @@ int main() {
                 seq_sleep(3)   ;
                 seq puts("whoo");
             }
+
+        seq_if(x < 3) {
+            seq_reset();
         }
+        //TODO fix bug. This should wait till T1 finished looping to continue with T2
+
+        T2
+        seq_sync_with_other_thread(&thread1);
+        seq puts("ending");
+        seq_sleep(1)   ;
+        seq puts("all");
+        seq_sleep(1)   ;
+        seq puts("stuff");
 
         sleep_ms(500);
     }
