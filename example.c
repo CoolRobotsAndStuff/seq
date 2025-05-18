@@ -18,6 +18,7 @@ long long __seq_get_time_ns() {
 #endif //ndef seq_get_time_ns
 
 #define MAX_IF_CACHE 100
+#define MAX_SUBTHREADS 10
 
 typedef struct {
     int index;
@@ -28,10 +29,17 @@ typedef struct {
     int if_cache_count;
     int if_cache_indexes[MAX_IF_CACHE];
     int if_cache_vals[MAX_IF_CACHE];
+} SeqSubthread;
+
+typedef struct {
+    SeqSubthread subthreads[MAX_SUBTHREADS];
+    size_t count;
+    size_t current_subthread;
 } SeqThread;
 
-SeqThread* seq_current_thread = NULL;
 
+SeqSubthread* seq_current_thread = NULL;
+SeqThread* seq_current_superthread = NULL;
 
 bool check_if() {
     if (seq_current_thread->if_index-1 >= seq_current_thread->if_cache_count) return false; 
@@ -58,8 +66,8 @@ bool save_if_result(bool cond) {
 }
 
 
-SeqThread seq_thread() {
-    SeqThread ret;
+SeqSubthread seq_subthread() {
+    SeqSubthread ret;
     ret.index   = 0;
     ret.counter = 1;
     ret.delay_start = -1;
@@ -81,7 +89,7 @@ void seq_start() {
 }
 
 void seq_sleep(double seconds) {
-    SeqThread* t = seq_current_thread;
+    SeqSubthread* t = seq_current_thread;
     t->index += 1;
     if (t->index == t->counter) { 
         long long nanoseconds = seconds * 1000 * 1000 * 1000;
@@ -134,7 +142,7 @@ void seq_jump(int index) {
     }
 }
 
-void seq_sync_with_other_thread(SeqThread* t) {
+void seq_sync_with_other_thread(SeqSubthread* t) {
     seq_current_thread->index += 1;
     t->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter && t->index == t->counter) {
@@ -143,7 +151,7 @@ void seq_sync_with_other_thread(SeqThread* t) {
     }
 }
 
-void seq_wait_for_other_thread(SeqThread* t) {
+void seq_wait_for_other_thread(SeqSubthread* t) {
     seq_current_thread->index += 1;
     t->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) {
@@ -156,7 +164,7 @@ void seq_wait_for_other_thread(SeqThread* t) {
     }
 }
 
-void seq_sync_both(SeqThread* a, SeqThread* b) {
+void seq_sync_both(SeqSubthread* a, SeqSubthread* b) {
     a->index += 1;
     b->index += 1;
     if (a->counter == a->index && b->counter == b->index ) { 
@@ -165,7 +173,7 @@ void seq_sync_both(SeqThread* a, SeqThread* b) {
     }
 }
 
-void seq_sync_any(SeqThread* a, SeqThread* b) {
+void seq_sync_any(SeqSubthread* a, SeqSubthread* b) {
     a->index += 1;
     b->index += 1;
     if ((a->index == a->counter) || (b->index == b->counter)) { 
@@ -202,12 +210,42 @@ bool always_false() {
     return false;
 }
 
+void seq_set_current(SeqThread* t) {
+    seq_current_thread = &t->subthreads[t->count-1];
+    seq_current_superthread = t;
+}
+
+SeqThread seq_thread() {
+    SeqThread ret;
+    for (int i = 0; i < MAX_SUBTHREADS; ++i)
+        ret.subthreads[i] = seq_subthread();
+    ret.count = 1;
+    return ret;
+}
+
+int seq_loop_begin(void) {
+    seq_current_superthread->count += 1;
+    seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
+    seq_start();
+    seq_wait_for_other_thread(&seq_current_superthread->subthreads[seq_current_superthread->count-2]);
+    return 1;
+}
+
+void seq_do_while_end(bool condition) {
+    seq_if(condition) {
+        seq_reset();
+    } 
+    seq_current_superthread->count -= 1;
+    seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
+    seq_sync_with_other_thread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
+}
+
+#define seq_do_while(condition) for (int i=0, _=seq_loop_begin(); i!=1; i=1, seq_do_while_end((condition)))
+
 int main() {
     SeqThread thread1 = seq_thread();
-    SeqThread thread2 = seq_thread();
 
-    #define T1 seq_current_thread = &thread1;
-    #define T2 seq_current_thread = &thread2;
+    #define T1 seq_set_current(&thread1);
 
     int x;
     while (1) {
@@ -215,17 +253,15 @@ int main() {
         //printf("tick: %ld\n", tick_time);
         puts(".");
 
-
-        T2 seq_start();
+        T1 seq_start();
         seq puts("doing");
         seq_sleep(1)   ;
         seq puts("some");
         seq_sleep(1)   ;
         seq puts("init work");
         seq x = 0;
-
-        T1 seq_start();
-            seq_wait_for_other_thread(&thread2);
+        
+        seq_do_while(x < 3) {
             seq x += 1;
             seq_if(always_false()) {
                 seq puts("three");
@@ -245,14 +281,7 @@ int main() {
                 seq_sleep(3)   ;
                 seq puts("whoo");
             }
-
-        seq_if(x < 3) {
-            seq_reset();
         }
-        //TODO fix bug. This should wait till T1 finished looping to continue with T2
-
-        T2
-        seq_sync_with_other_thread(&thread1);
         seq puts("ending");
         seq_sleep(1)   ;
         seq puts("all");
@@ -284,3 +313,25 @@ int main() {
     //  sleep_ms(500);
     // }
 }
+
+        // seq_while(x < 3) {
+        //     seq x += 1;
+        //     seq_if(always_false()) {
+        //         seq puts("three");
+        //         seq_sleep(3)   ;
+        //         seq puts("two");
+        //         seq_sleep(3)   ;
+        //         seq puts("one");
+        //     } seq_else_if(always_true()) {
+        //         seq puts("bim");
+        //         seq_sleep(1)   ;
+        //         seq puts("bam");
+        //         seq_sleep(1)   ;
+        //     } seq_else {
+        //         seq puts("whaa");
+        //         seq_sleep(3)   ;
+        //         seq puts("whii");
+        //         seq_sleep(3)   ;
+        //         seq puts("whoo");
+        //     }
+        // }
