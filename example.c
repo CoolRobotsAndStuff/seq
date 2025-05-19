@@ -29,17 +29,41 @@ typedef struct {
     int if_cache_count;
     int if_cache_indexes[MAX_IF_CACHE];
     int if_cache_vals[MAX_IF_CACHE];
+
+    int loop_cond_cache;
 } SeqSubthread;
 
 typedef struct {
     SeqSubthread subthreads[MAX_SUBTHREADS];
     size_t count;
     size_t current_subthread;
-} SeqThread;
 
+} SeqThread;
 
 SeqSubthread* seq_current_thread = NULL;
 SeqThread* seq_current_superthread = NULL;
+
+bool __seq_forward_cond(bool cond) {
+    seq_current_thread->loop_cond_cache = cond;
+    return cond;
+}
+
+int seq_faux_check_thread(SeqSubthread* thread) {
+    thread->index += 1;
+    if (thread->index == thread->counter) {
+        thread->index -= 1;
+        return 1;
+    }
+    thread->index -= 1;
+    return 0;
+}
+
+#define seq_loop_cond_cache(cond) (                   \
+        seq_current_thread->loop_cond_cache == -1 ?    \
+            seq_faux_check_thread(&seq_current_superthread->subthreads[seq_current_superthread->count-2])\
+            && __seq_forward_cond(cond) :  \
+            seq_current_thread->loop_cond_cache          \
+    )
 
 bool check_if() {
     if (seq_current_thread->if_index-1 >= seq_current_thread->if_cache_count) return false; 
@@ -78,6 +102,8 @@ SeqSubthread seq_subthread() {
         ret.if_cache_indexes[i] = -1;
         ret.if_cache_vals[i] = -1;
     }
+
+    ret.loop_cond_cache = -1;
 
     return ret;
 }
@@ -131,6 +157,8 @@ void seq_reset() {
             seq_current_thread->if_cache_indexes[i] = -1;
             seq_current_thread->if_cache_vals[i] = -1;
         }
+
+        seq_current_thread->loop_cond_cache = -1;
     }
     seq_current_thread->index = 100000000;
 }
@@ -189,12 +217,12 @@ void sleep_ms(long ms) {
 
 #define seq if(seq_check())
 
-#define seq_if(cond) if(increment_if_index(),            \
-    (check_if() ?                                        \
-        seq_current_thread->index += 1, get_if_result()  \
-        :                                                \
+#define seq_if(cond) if(increment_if_index(),        \
+    (check_if() ?                                     \
+        seq_current_thread->index += 1, get_if_result()\
+        :                                               \
         seq_check() && save_if_result((cond))            \
-    )                                                    \
+    )                                                     \
 )
 
 #define seq_else else if(check_if() || seq_check())
@@ -223,7 +251,7 @@ SeqThread seq_thread() {
     return ret;
 }
 
-int seq_loop_begin(void) {
+int seq_while_begin(void) {
     seq_current_superthread->count += 1;
     seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
     seq_start();
@@ -231,7 +259,7 @@ int seq_loop_begin(void) {
     return 1;
 }
 
-void seq_do_while_end(bool condition) {
+void seq_while_end(bool condition) {
     seq_if(condition) {
         seq_reset();
     } 
@@ -240,7 +268,15 @@ void seq_do_while_end(bool condition) {
     seq_sync_with_other_thread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
 }
 
-#define seq_do_while(condition) for (int i=0, _=seq_loop_begin(); i!=1; i=1, seq_do_while_end((condition)))
+bool __seq__while__condition;
+int __seq_dummy_i;
+
+#define seq_while(condition)                                      \
+        seq_while_begin();                                         \
+        __seq__while__condition = seq_loop_cond_cache((condition)); \
+            for (__seq_dummy_i=0;__seq_dummy_i!=1;__seq_dummy_i=1,                                   \
+                seq_while_end(__seq__while__condition)                \
+            ) if (__seq__while__condition)
 
 int main() {
     SeqThread thread1 = seq_thread();
@@ -259,17 +295,18 @@ int main() {
         seq puts("some");
         seq_sleep(1)   ;
         seq puts("init work");
+
         seq x = 0;
-        
-        seq_do_while(x < 3) {
+        seq_while(always_true()) {
             seq x += 1;
-            seq_if(always_false()) {
+            seq printf("x: %d\n", x);
+            seq_if(false) {
                 seq puts("three");
                 seq_sleep(3)   ;
                 seq puts("two");
                 seq_sleep(3)   ;
                 seq puts("one");
-            } seq_else_if(always_true()) {
+            } seq_else_if(true) {
                 seq puts("bim");
                 seq_sleep(1)   ;
                 seq puts("bam");
@@ -288,7 +325,7 @@ int main() {
         seq_sleep(1)   ;
         seq puts("stuff");
 
-        sleep_ms(500);
+        sleep_ms(200);
     }
 
     // while (1) {
