@@ -43,27 +43,6 @@ typedef struct {
 SeqSubthread* seq_current_thread = NULL;
 SeqThread* seq_current_superthread = NULL;
 
-bool __seq_forward_cond(bool cond) {
-    seq_current_thread->loop_cond_cache = cond;
-    return cond;
-}
-
-int seq_faux_check_thread(SeqSubthread* thread) {
-    thread->index += 1;
-    if (thread->index == thread->counter) {
-        thread->index -= 1;
-        return 1;
-    }
-    thread->index -= 1;
-    return 0;
-}
-
-#define seq_loop_cond_cache(cond) (                   \
-        seq_current_thread->loop_cond_cache == -1 ?    \
-            seq_faux_check_thread(&seq_current_superthread->subthreads[seq_current_superthread->count-2])\
-            && __seq_forward_cond(cond) :  \
-            seq_current_thread->loop_cond_cache          \
-    )
 
 bool check_if() {
     if (seq_current_thread->if_index-1 >= seq_current_thread->if_cache_count) return false; 
@@ -170,7 +149,11 @@ void seq_jump(int index) {
     }
 }
 
-void seq_sync_with_other_thread(SeqSubthread* t) {
+SeqSubthread* seq_last_subthread(SeqThread* t) {
+    return &t->subthreads[t->count-1];
+}
+
+void seq_sync_with_other_subthread(SeqSubthread* t) {
     seq_current_thread->index += 1;
     t->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter && t->index == t->counter) {
@@ -179,7 +162,11 @@ void seq_sync_with_other_thread(SeqSubthread* t) {
     }
 }
 
-void seq_wait_for_other_thread(SeqSubthread* t) {
+void seq_sync_with_other(SeqThread* t) {
+    seq_sync_with_other_subthread(seq_last_subthread(t));
+}
+
+void seq_wait_for_other_subthread(SeqSubthread* t) {
     seq_current_thread->index += 1;
     t->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) {
@@ -192,21 +179,29 @@ void seq_wait_for_other_thread(SeqSubthread* t) {
     }
 }
 
-void seq_sync_both(SeqSubthread* a, SeqSubthread* b) {
-    a->index += 1;
-    b->index += 1;
-    if (a->counter == a->index && b->counter == b->index ) { 
-        a->counter += 1;
-        b->counter += 1;
+void seq_wait_for_other(SeqThread* t) {
+    seq_wait_for_other_subthread(seq_last_subthread(t));
+}
+
+void seq_sync_both(SeqThread* a, SeqThread* b) {
+    SeqSubthread* aa = seq_last_subthread(a);
+    SeqSubthread* bb = seq_last_subthread(b);
+    aa->index += 1;
+    bb->index += 1;
+    if (aa->counter == aa->index && bb->counter == bb->index) { 
+        aa->counter += 1;
+        bb->counter += 1;
     }
 }
 
-void seq_sync_any(SeqSubthread* a, SeqSubthread* b) {
-    a->index += 1;
-    b->index += 1;
-    if ((a->index == a->counter) || (b->index == b->counter)) { 
-        a->counter = a->index + 1; 
-        b->counter = b->index + 1; 
+void seq_sync_any(SeqThread* a, SeqThread* b) {
+    SeqSubthread* aa = seq_last_subthread(a);
+    SeqSubthread* bb = seq_last_subthread(b);
+    aa->index += 1;
+    bb->index += 1;
+    if ((aa->index == aa->counter) || (bb->index == bb->counter)) { 
+        aa->counter = aa->index + 1; 
+        bb->counter = bb->index + 1; 
     }
 }
 
@@ -251,11 +246,13 @@ SeqThread seq_thread() {
     return ret;
 }
 
+
+
 int seq_while_begin(void) {
     seq_current_superthread->count += 1;
     seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
     seq_start();
-    seq_wait_for_other_thread(&seq_current_superthread->subthreads[seq_current_superthread->count-2]);
+    seq_wait_for_other_subthread(&seq_current_superthread->subthreads[seq_current_superthread->count-2]);
     return 1;
 }
 
@@ -265,8 +262,29 @@ void seq_while_end(bool condition) {
     } 
     seq_current_superthread->count -= 1;
     seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
-    seq_sync_with_other_thread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
+    seq_sync_with_other_subthread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
 }
+
+bool __seq_forward_cond(bool cond) {
+    seq_current_thread->loop_cond_cache = cond;
+    return cond;
+}
+int seq_faux_check_thread(SeqSubthread* thread) {
+    thread->index += 1;
+    if (thread->index == thread->counter) {
+        thread->index -= 1;
+        return 1;
+    }
+    thread->index -= 1;
+    return 0;
+}
+
+#define seq_loop_cond_cache(cond) (                  \
+        seq_current_thread->loop_cond_cache == -1 ?   \
+            seq_faux_check_thread(&seq_current_superthread->subthreads[seq_current_superthread->count-2])\
+            && __seq_forward_cond(cond) :               \
+            seq_current_thread->loop_cond_cache          \
+    )
 
 bool __seq__while__condition;
 int __seq_dummy_i;
@@ -274,9 +292,49 @@ int __seq_dummy_i;
 #define seq_while(condition)                                      \
         seq_while_begin();                                         \
         __seq__while__condition = seq_loop_cond_cache((condition)); \
-            for (__seq_dummy_i=0;__seq_dummy_i!=1;__seq_dummy_i=1,                                   \
+            for (__seq_dummy_i=0;__seq_dummy_i!=1;__seq_dummy_i=1,   \
                 seq_while_end(__seq__while__condition)                \
             ) if (__seq__while__condition)
+
+int main() {
+    SeqThread thread1 = seq_thread();
+    SeqThread thread2 = seq_thread();
+
+    #define T1 seq_set_current(&thread1);
+    #define T2 seq_set_current(&thread2);
+
+    int i;
+    while (1) {
+        T1 seq_start()                ;   T2 seq_start();
+        T1 seq puts("[1] starting...");   T2 seq puts("[2] starting...");
+        T1 seq_sleep(1)               ;   T2 seq_sleep(3);
+        T1 seq puts("[1] ...thread1") ;   T2 seq puts("[2] ...slower thread2");
+        T1 seq_sleep(1)               ;   T2 seq_sleep(3);
+        
+        T1
+        seq i = 0;
+        seq_while(i < 6) {
+            seq printf("[1] i = %d, ", i);
+            seq_if(i % 2 == 0) {
+                seq puts("even");
+            } seq_else {
+                seq puts("odd");
+            }
+            seq_sleep(1);
+            seq i++;
+        }
+
+        T1 seq puts("[1] ending thread1");
+        T2 seq puts("[2] ending thread2");
+
+        seq_sync_both(&thread1, &thread2);
+
+        T2 seq break;
+    }
+    return 1;
+}
+
+#if 0
 
 int main() {
     SeqThread thread1 = seq_thread();
@@ -296,9 +354,15 @@ int main() {
         seq_sleep(1)   ;
         seq puts("init work");
 
+        
+
+        seq_for(seq_alloc(int, x, 0), x < 3, ++x) {
+
+        }
+
+
         seq x = 0;
-        seq_while(always_true()) {
-            seq x += 1;
+        seq_while(x < 3) {
             seq printf("x: %d\n", x);
             seq_if(false) {
                 seq puts("three");
@@ -326,6 +390,90 @@ int main() {
         seq puts("stuff");
 
         sleep_ms(200);
+        seq x += 1;
+    }
+
+    while (1) {
+        printf("tick: %ld\n", time(NULL));
+
+        seq_start(&thread1); seq_start(&thread2);
+
+        T1 seq puts("bim");    T2 seq puts("three");
+      //     |                         |
+        T1 seq_sleep(3)   ;    T2 seq_sleep(4)     ;
+      //     |                         |
+        T1 seq puts("bam");    T2 seq puts("two")  ;
+      //     |                         |
+        T1 seq_sleep(3)   ;    T2 seq_sleep(6)     ;
+      //     |                         |
+        T1 seq puts("bum");    T2 seq puts("one")  ;
+      //      \                       /
+            seq_sync_any(&thread1, &thread2);
+      //                |
+                 T1 seq puts("BOOM");
+
+     sleep_ms(500);
+    }
+}
+#endif
+
+#if 0
+
+int main() {
+    SeqThread thread1 = seq_thread();
+
+    #define T1 seq_set_current(&thread1);
+
+    int x;
+    while (1) {
+        time_t tick_time = time(NULL);
+        //printf("tick: %ld\n", tick_time);
+        puts(".");
+
+        T1 seq_start();
+        seq puts("doing");
+        seq_sleep(1)   ;
+        seq puts("some");
+        seq_sleep(1)   ;
+        seq puts("init work");
+
+        
+
+        seq_for(seq_alloc(int, x, 0), x < 3, ++x) {
+
+        }
+
+
+        seq x = 0;
+        seq_while(x < 3) {
+            seq printf("x: %d\n", x);
+            seq_if(false) {
+                seq puts("three");
+                seq_sleep(3)   ;
+                seq puts("two");
+                seq_sleep(3)   ;
+                seq puts("one");
+            } seq_else_if(true) {
+                seq puts("bim");
+                seq_sleep(1)   ;
+                seq puts("bam");
+                seq_sleep(1)   ;
+            } seq_else {
+                seq puts("whaa");
+                seq_sleep(3)   ;
+                seq puts("whii");
+                seq_sleep(3)   ;
+                seq puts("whoo");
+            }
+        }
+        seq puts("ending");
+        seq_sleep(1)   ;
+        seq puts("all");
+        seq_sleep(1)   ;
+        seq puts("stuff");
+
+        sleep_ms(200);
+        seq x += 1;
     }
 
     // while (1) {
@@ -351,24 +499,4 @@ int main() {
     // }
 }
 
-        // seq_while(x < 3) {
-        //     seq x += 1;
-        //     seq_if(always_false()) {
-        //         seq puts("three");
-        //         seq_sleep(3)   ;
-        //         seq puts("two");
-        //         seq_sleep(3)   ;
-        //         seq puts("one");
-        //     } seq_else_if(always_true()) {
-        //         seq puts("bim");
-        //         seq_sleep(1)   ;
-        //         seq puts("bam");
-        //         seq_sleep(1)   ;
-        //     } seq_else {
-        //         seq puts("whaa");
-        //         seq_sleep(3)   ;
-        //         seq puts("whii");
-        //         seq_sleep(3)   ;
-        //         seq puts("whoo");
-        //     }
-        // }
+#endif
