@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <string.h>
 
 long long __seq_get_time_ns();
 
@@ -18,6 +19,7 @@ long long __seq_get_time_ns();
 
 #define MAX_IF_CACHE 100
 #define MAX_SUBTHREADS 10
+#define SEQ_STACK_SIZE 100
 
 typedef struct {
     int index;
@@ -32,11 +34,18 @@ typedef struct {
     int loop_cond_cache;
 } SeqSubthread;
 
+
+typedef struct {
+    char data[SEQ_STACK_SIZE];
+    size_t place;
+} SeqStack;
+
 typedef struct {
     SeqSubthread subthreads[MAX_SUBTHREADS];
     size_t count;
     size_t current_subthread;
 
+    SeqStack stack;
 } SeqThread;
 
 bool check_if();
@@ -88,6 +97,20 @@ void sleep_ms(long ms);
 #define seq_else else if(check_if() || seq_check())
 #define seq_else_if(cond) seq_else seq_if(cond)
 
+#define SEQ_RESTORE_VARS 0
+#define SEQ_SAVE_VARS 1
+#define seq_independent_memory for (__seq_mem_mode = 0; __seq_mem_mode < 2; ++__seq_mem_mode)
+
+#define seqv(varname)                                                      \
+    static varname;                                                         \
+    seq_current_superthread->stack.place -= sizeof(varname);                 \
+    if (__seq_mem_mode == SEQ_SAVE_VARS) {                                                     \
+        memcpy(&seq_current_superthread->stack.data[seq_current_superthread->stack.place], &varname, sizeof(varname)); \
+    } else if (__seq_mem_mode == SEQ_RESTORE_VARS) {                                             \
+        memcpy(&varname, &seq_current_superthread->stack.data[seq_current_superthread->stack.place], sizeof(varname));   \
+    }                                                                             \
+    seq varname
+
 
 void seq_set_current(SeqThread* t);
 
@@ -109,12 +132,13 @@ int seq_faux_check_thread(SeqSubthread* thread);
 // bool __seq__while__condition;
 // int __seq_dummy_i;
 
+//TODO make unique for file too?
 #define seq_while(condition)                                      \
         seq_while_begin();                                         \
-        __seq__while__condition = seq_loop_cond_cache((condition)); \
-            for (__seq_dummy_i=0;__seq_dummy_i!=1;__seq_dummy_i=1,   \
-                seq_while_end(__seq__while__condition)                \
-            ) if (__seq__while__condition)
+        bool __seq__while__condition##__LINE__ = seq_loop_cond_cache((condition)); \
+            for (int __seq_dummy_i##__LINE__=0;__seq_dummy_i##__LINE__!=1;__seq_dummy_i##__LINE__=1,   \
+                seq_while_end(__seq__while__condition##__LINE__)                \
+            ) if (__seq__while__condition##__LINE__)
 
 #endif // SEQ_H_
 
@@ -173,9 +197,15 @@ SeqSubthread seq_subthread() {
 }
 
 
+int __seq_mem_mode;
 void seq_start() {
     seq_current_thread->index = 0;
     seq_current_thread->if_index = 0;
+
+    seq_current_superthread->stack.place = SEQ_STACK_SIZE;
+    if (__seq_mem_mode == SEQ_SAVE_VARS) {
+        seq_current_thread->index = 100000000;
+    }
 }
 
 void seq_sleep(double seconds) {
@@ -225,6 +255,23 @@ void seq_reset() {
         seq_current_thread->loop_cond_cache = -1;
     }
     seq_current_thread->index = 100000000;
+}
+
+void seq_reset_thread(SeqSubthread* t) {
+    if (seq_check()) {
+        t->counter = 1;
+        t->delay_start = -1;
+
+        t->if_cache_count = 0;
+        t->if_index = 0;
+        for (size_t i = 0; i < MAX_IF_CACHE; ++i) {
+            t->if_cache_indexes[i] = -1;
+            t->if_cache_vals[i] = -1;
+        }
+
+        t->loop_cond_cache = -1;
+    }
+    t->index = 100000000;
 }
 
 void seq_jump(int index) {
@@ -305,12 +352,14 @@ SeqThread seq_thread() {
     for (int i = 0; i < MAX_SUBTHREADS; ++i)
         ret.subthreads[i] = seq_subthread();
     ret.count = 1;
+    ret.stack.place = SEQ_STACK_SIZE;
     return ret;
 }
 
 
 
 int seq_while_begin(void) {
+    seq_reset_thread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
     seq_current_superthread->count += 1;
     seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
     seq_start();
@@ -321,7 +370,7 @@ int seq_while_begin(void) {
 void seq_while_end(bool condition) {
     seq_if(condition) {
         seq_reset();
-    } 
+    }
     seq_current_superthread->count -= 1;
     seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
     seq_sync_with_other_subthread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
