@@ -4,22 +4,33 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
+#include <stdarg.h>
+#include <stdio.h>
 #define SEQ_IMPLEMENTATION
 #include "../seq.h"
 
-void seq_scanf(const char* fmt, long long int* n) {
+int seq_scanf(const char* fmt, ...) {
     seq_current_thread->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) {
-        int ret = scanf(fmt, n);
+        va_list args;
+        int ret;
+        va_start(args, fmt);
+        ret = vscanf(fmt, args);
+        va_end(args);
+
         if (ret < 0) {
-            if (errno != EAGAIN) {
-                perror("seq_scanf");
-                return;
+            if (errno == EAGAIN) {
+                return -2;
             }
+            perror("seq_scanf");
+            seq_current_thread->counter += 1;
+            return -1;
         } else {
             seq_current_thread->counter += 1;
+            return ret;
         }
     }
+    return 0;
 }
 
 #define SEQ_POOL_CAPACITY 10
@@ -29,7 +40,10 @@ typedef struct {
     bool is_active[SEQ_POOL_CAPACITY];
 } SeqThreadPool;
 
+
 int main() {
+    #define TEMP_BUF_SIZE 1000
+    char* temp_buffer[TEMP_BUF_SIZE]; 
     SeqThread thread1 = seq_thread();
     SeqThreadPool pool = {0};
 
@@ -52,7 +66,12 @@ int main() {
         seq printf("Find closest prime after: ");
         bool seqv(responded) = false;
         long long seqv(n);
-        seq_scanf("%lld", &n);
+        int ret = seq_scanf("%lld", &n);
+        seq_if (ret != -2 && ret < 1) {
+            seq gets(temp_buffer); // stay safe kids ;)
+            seq printf("Invalid input: %s\n", temp_buffer);
+            seq_reset();
+        }
         seq {
             for (int ti = 0; ti < SEQ_POOL_CAPACITY; ++ti) {
                 if (!pool.is_active[ti]) {
@@ -78,9 +97,9 @@ int main() {
             if (!pool.is_active[ti]) continue;
             seq_set_current(&pool.threads[ti]);
             seq_independent_memory {
-
                 seq_start();
                 seq_wait_for_other(&thread1);
+
 
                 long long seqv(start); // load from initialization
                 long long seqv(possible_prime) = start; 
@@ -88,7 +107,11 @@ int main() {
                 long long seqv(i) = 0;
                 bool seqv(is_prime) = true;
 
+
                 seq_while (!found) {
+                    //seq printf("mem_mode: %d\n", seq_current_thread->mem_mode);
+                    // seq printf("start: %lld\n", start);
+                    // seq printf("possible_prime: %lld\n", possible_prime);
                     seq is_prime = true;
                     seq i = possible_prime-1;
 
@@ -107,6 +130,7 @@ int main() {
                         }
                     } seq_else {
                         seq possible_prime += 1;
+                        //seq puts("+1");
                     }
 
                 }
@@ -116,5 +140,5 @@ int main() {
             } // seq_independent_memory
         }
     }
-    return 1;
+    return 0;
 }
