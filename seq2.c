@@ -93,6 +93,8 @@ void seq_sync_any(SeqThread* a, SeqThread* b) {
 
 #define seq if(seq_check())
 
+#define seq_break seq_goto_index(out)
+
 #define seq_while(cond, ...)                   \
     do {                                        \
         int label = seq_current_thread->index+1; \
@@ -145,14 +147,21 @@ void seq_sync_any(SeqThread* a, SeqThread* b) {
 
 static char do_else = -1;
 
+#define seqv(varname) static varname; seq varname
+
+#define seq_for(vardef, cond, increment, ...) \
+vardef;                                         \
+seq_while(cond,                                 \
+    __VA_ARGS__                                  \
+    seq {increment;}                                     \
+)
+
 int main(void) {
     SeqThread thread1 = seq_thread();
     SeqThread thread2 = seq_thread();
 
     #define T1 seq_current_thread = &thread1;
     #define T2 seq_current_thread = &thread2;
-
-    #define IF_COUNT 4
 
     while (1) {
         T1 seq_start();
@@ -161,18 +170,14 @@ int main(void) {
 
         // int label_0 = seq_current_thread->index+1;
         // static int out; seq_goto_index_if_not(out, j < 3);
-        //
-        // static int j = 0;
-        // seq_while(j < 3,
-        //     seq puts("bam");
-        //     seq puts("bum");
-        //     static int k; seq k = 0;
-        //     seq_while(k < 4,
-        //         seq printf("hello %d\n", k);
-        //         seq k++;
-        //     )
-        //     seq j ++;
-        // )
+        
+        seq_for(int seqv(j) = 0, j < 3, ++j,
+            seq puts("bam");
+            seq puts("bum");
+            seq_for(int seqv(k) = 0, k < 2, ++k,
+                seq printf("hello %d\n", k);
+            )
+        )
 
         
         static int x = 4;
