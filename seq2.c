@@ -2,11 +2,19 @@
 #include <unistd.h>
 #include <stdbool.h>
 
+// TODO Independent memory across threads
+// TODO Lazy ifs and loops
+// TODO Async IO
+// TODO prevent_busyloop() function
+// TODO crossplatform timing
+
+
 typedef struct {
     int index;
     int counter;
     char do_else;
     bool missed;
+    long long delay_start;
 } SeqThread;
 
 SeqThread seq_thread() {
@@ -14,6 +22,7 @@ SeqThread seq_thread() {
     ret.index   = 0;
     ret.counter = 1;
     ret.do_else = 0;
+    ret.delay_start = -1;
     ret.missed = false;
     return ret;
 }
@@ -25,6 +34,21 @@ void seq_miss_cicle() {
     if (seq_current_thread->index == seq_current_thread->counter) { 
         if (seq_current_thread->missed) seq_current_thread->counter += 1;
         seq_current_thread->missed = !seq_current_thread->missed;
+    }
+}
+
+void seq_sleep(double seconds) {
+    SeqThread* t = seq_current_thread;
+    t->index += 1;
+    if (t->index == t->counter) { 
+        long long nanoseconds = seconds * 1000 * 1000 * 1000;
+        if (t->delay_start < 0) { 
+            t->delay_start = seq_get_time_ns();
+        }
+        if (seq_get_time_ns() - t->delay_start > nanoseconds) {
+            t->delay_start = -1;
+            t->counter += 1;
+        }
     }
 }
 
@@ -150,10 +174,10 @@ static char do_else = -1;
 #define seqv(varname) static varname; seq varname
 
 #define seq_for(vardef, cond, increment, ...) \
-vardef;                                         \
+vardef;                                        \
 seq_while(cond,                                 \
     __VA_ARGS__                                  \
-    seq {increment;}                                     \
+    seq {increment;}                              \
 )
 
 int main(void) {
