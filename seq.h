@@ -20,7 +20,7 @@ long long __seq_get_time_ns();
 
 #define MAX_IF_CACHE 100
 #define MAX_SUBTHREADS 10
-#define SEQ_STACK_SIZE 10000
+#define SEQ_STACK_SIZE 1000
 
 #define SEQ_DISABLE INT_MAX
 
@@ -39,11 +39,14 @@ typedef struct {
     int if_cache_indexes[MAX_IF_CACHE];
     int if_cache_vals[MAX_IF_CACHE];
 
+    int loop_temp_index;
     int loop_cond_cache;
     int mem_mode;
     SeqStack stack;
 
 } SeqSubthread;
+
+SeqSubthread seq_subthread();
 
 #define SEQ_RESTORE_VARS          0
 #define SEQ_SAVE_VARS             1
@@ -59,6 +62,9 @@ typedef struct {
     //int mem_mode;
 } SeqThread;
 
+SeqSubthread* seq_current_thread = NULL;
+SeqThread* seq_current_superthread = NULL;
+
 bool check_if();
 
 bool increment_if_index();
@@ -68,7 +74,6 @@ bool get_if_result();
 bool save_if_result(bool cond);
 
 
-SeqSubthread seq_subthread();
 
 void seq_start();
 
@@ -108,18 +113,27 @@ void sleep_ms(long ms);
 #define seq_else else if(check_if() || seq_check())
 #define seq_else_if(cond) seq_else seq_if(cond)
 
-#define seq_independent_memory for (seq_current_thread->mem_mode = 0; seq_current_thread->mem_mode < 2; ++seq_current_thread->mem_mode)
+int seq_init_independent_memory() {
+    seq_current_thread->stack.place = SEQ_STACK_SIZE;
+    if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
+        seq_current_thread->loop_temp_index = seq_current_thread->index;
+        seq_current_thread->index = SEQ_DISABLE;
+    }
+    return 0;
+}
 
-#define seqv(varname)                                                                                                        \
-    static varname;                                                                                                          \
-    if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) {                                                                       \
-        seq_current_thread->stack.place -= sizeof(varname);                                                             \
-        if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {                                                                               \
-            memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));   \
-        } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {                                                                     \
-            memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));   \
-        }                                                                                                                    \
-    }                                                                                                                        \
+#define seq_independent_memory for (seq_current_thread->mem_mode = seq_init_independent_memory(); seq_current_thread->mem_mode < 2; seq_init_independent_memory(), ++seq_current_thread->mem_mode)
+
+#define seqv(varname)                                                                                      \
+    static varname;                                                                                         \
+    if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) {                                         \
+        seq_current_thread->stack.place -= sizeof(varname);                                                   \
+        if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {                                                   \
+            memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
+        } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {                                           \
+            memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));  \
+        }                                                                                                          \
+    }                                                                                                               \
     seq varname
 
 
@@ -143,13 +157,14 @@ int seq_faux_check_thread(SeqSubthread* thread);
 // bool __seq__while__condition;
 // int __seq_dummy_i;
 
+
 //TODO make unique for file too?
 #define seq_while(condition)                                      \
         seq_while_begin();                                         \
         bool __seq__while__condition##__LINE__ = seq_loop_cond_cache((condition)); \
-            for (int __seq_dummy_i##__LINE__=0;__seq_dummy_i##__LINE__!=1;__seq_dummy_i##__LINE__=1,   \
-                seq_while_end(__seq__while__condition##__LINE__)                \
-            ) if (__seq__while__condition##__LINE__)
+        for (int __seq_dummy_i##__LINE__=0;__seq_dummy_i##__LINE__!=1;__seq_dummy_i##__LINE__=1,   \
+            seq_while_end(__seq__while__condition##__LINE__)                \
+        ) if (seq_current_thread->mem_mode != SEQ_SAVE_VARS && __seq__while__condition##__LINE__) seq_independent_memory
 
 
 //for (seq_current_thread->mem_mode = 0; seq_current_thread->mem_mode < 2; ++seq_current_thread->mem_mode) 
@@ -163,8 +178,6 @@ long long __seq_get_time_ns() {
     return ts.tv_sec * 1000000000LL + ts.tv_nsec;
 }
 
-SeqSubthread* seq_current_thread = NULL;
-SeqThread* seq_current_superthread = NULL;
 
 bool check_if() {
     if (seq_current_thread->if_index-1 >= seq_current_thread->if_cache_count) return false; 
@@ -194,6 +207,7 @@ bool save_if_result(bool cond) {
 SeqSubthread seq_subthread() {
     SeqSubthread ret;
     ret.index   = 0;
+    ret.loop_temp_index = 0;
     ret.counter = 1;
     ret.delay_start = -1;
 
@@ -211,11 +225,10 @@ SeqSubthread seq_subthread() {
 }
 
 
-//int __seq_mem_mode = SEQ_NO_INDEPENDENT_MEMORY;
 void seq_start() {
     seq_current_thread->index = 0;
     seq_current_thread->if_index = 0;
-    
+
     seq_current_thread->stack.place = SEQ_STACK_SIZE;
     if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
         seq_current_thread->index = SEQ_DISABLE;
@@ -374,21 +387,26 @@ SeqThread seq_thread() {
 
 
 int seq_while_begin(void) {
-    seq_reset_thread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
-    seq_current_superthread->count += 1;
-    seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
-    seq_start();
-    seq_wait_for_other_subthread(&seq_current_superthread->subthreads[seq_current_superthread->count-2]);
+    if (seq_current_thread->mem_mode != SEQ_SAVE_VARS) {
+        seq_reset_thread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
+        seq_current_superthread->count += 1;
+        seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
+        seq_start();
+        seq_wait_for_other_subthread(&seq_current_superthread->subthreads[seq_current_superthread->count-2]);
+    }
     return 1;
 }
 
 void seq_while_end(bool condition) {
-    seq_if(condition) {
-        seq_reset();
+    if (seq_current_thread->mem_mode != SEQ_SAVE_VARS) {
+        seq_current_thread->index = seq_current_thread->loop_temp_index;
+        seq_if(condition) {
+            seq_reset();
+        }
+        seq_current_superthread->count -= 1;
+        seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
+        seq_sync_with_other_subthread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
     }
-    seq_current_superthread->count -= 1;
-    seq_current_thread = &seq_current_superthread->subthreads[seq_current_superthread->count-1];
-    seq_sync_with_other_subthread(&seq_current_superthread->subthreads[seq_current_superthread->count]);
 }
 
 bool __seq_forward_cond(bool cond) {
