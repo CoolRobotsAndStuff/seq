@@ -5,12 +5,31 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <time.h>
+#include <limits.h>
 
 // TODO Independent memory across threads
 // TODO Lazy ifs and loops
 // TODO Async IO
 // TODO prevent_busyloop() function
 // TODO crossplatform timing
+
+
+#define SEQ_DISABLE INT_MAX
+
+#define SEQ_STACK_SIZE 1000
+typedef struct {
+    char data[SEQ_STACK_SIZE];
+    size_t place;
+} SeqStack;
+
+#define SEQ_RESTORE_VARS          0
+#define SEQ_SAVE_VARS             1
+#define SEQ_NO_INDEPENDENT_MEMORY 2
+
+int seq_init_independent_memory();
+
+#define seq_independent_memory for (seq_current_thread->mem_mode = seq_init_independent_memory(); seq_current_thread->mem_mode < 2; seq_init_independent_memory(), ++seq_current_thread->mem_mode)
+
 long long __seq_get_time_ns();
 
 #ifndef seq_get_time_ns
@@ -26,6 +45,8 @@ typedef struct {
     char do_else;
     bool missed;
     long long delay_start;
+    SeqStack stack;
+    int mem_mode;
 } SeqThread;
 
 SeqThread seq_thread() {
@@ -35,6 +56,8 @@ SeqThread seq_thread() {
     ret.do_else = 0;
     ret.delay_start = -1;
     ret.missed = false;
+    ret.mem_mode = SEQ_NO_INDEPENDENT_MEMORY;;
+    ret.stack.place = SEQ_STACK_SIZE;
     return ret;
 }
 
@@ -46,6 +69,8 @@ void seq_start();
 
 int seq_check();
 
+void seq_reset();
+
 void seq_goto_index(int index);
 
 void seq_goto_index_if_positive(int index);
@@ -53,6 +78,7 @@ bool seq_goto_index_if_not(int index, bool cond);
 
 void seq_sync_both(SeqThread* a, SeqThread* b);
 void seq_sync_any(SeqThread* a, SeqThread* b);
+void seq_wait_for(SeqThread* t);
 
 #define seq if(seq_check())
 
@@ -108,7 +134,23 @@ void seq_sync_any(SeqThread* a, SeqThread* b);
         } while(0);                                                                                             \
     COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
 
-#define seqv(varname) static varname; seq varname
+#define seq_load_into_stack(thread_ptr, variable) \
+        do {\
+            (thread_ptr)->stack.place -= sizeof(variable);\
+            memcpy(&(thread_ptr)->stack.data[(thread_ptr)->stack.place], &variable, sizeof(variable));\
+        } while(0);
+
+#define seqv(varname)                                                                                      \
+    static varname;                                                                                         \
+    if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) {                                         \
+        seq_current_thread->stack.place -= sizeof(varname);                                                   \
+        if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {                                                   \
+            memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
+        } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {                                           \
+            memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));  \
+        }                                                                                                          \
+    }                                                                                                               \
+    seq varname
 
 #define seq_for(vardef, cond, increment, ...) \
 vardef;                                        \
@@ -156,6 +198,12 @@ void seq_sleep(double seconds) {
 
 void seq_start() { 
     seq_current_thread->index = 0;
+
+    seq_current_thread->stack.place = SEQ_STACK_SIZE;
+    if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
+        seq_current_thread->index = SEQ_DISABLE;
+    }
+
     seq_miss_cicle();
 }
 
@@ -166,6 +214,14 @@ int seq_check() {
         return 1;
     }
     return 0;
+}
+
+void seq_reset() {
+    if (seq_check()) {
+        seq_current_thread->counter = 1;
+        seq_current_thread->delay_start = -1;
+    }
+    seq_current_thread->index = SEQ_DISABLE;
 }
 
 void seq_goto_index(int index) {
@@ -216,5 +272,25 @@ void seq_sync_any(SeqThread* a, SeqThread* b) {
     }
 }
 
+void seq_wait_for(SeqThread* t) {
+    seq_current_thread->index += 1;
+    t->index += 1;
+    if (seq_current_thread->index == seq_current_thread->counter) {
+        if (t->counter == t->index) {
+            seq_current_thread->counter += 1;
+            t->counter += 1;
+        } else if (t->counter > t->index) {
+            seq_current_thread->counter += 1;
+        } 
+    }
+}
+
+int seq_init_independent_memory() {
+    seq_current_thread->stack.place = SEQ_STACK_SIZE;
+    if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
+        seq_current_thread->index = SEQ_DISABLE;
+    }
+    return 0;
+}
 
 #endif // SEQ_IMPLEMENTATION
