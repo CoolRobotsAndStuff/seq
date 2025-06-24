@@ -1,12 +1,23 @@
+#ifndef SEQ_H_
+#define SEQ_H_
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <time.h>
 
 // TODO Independent memory across threads
 // TODO Lazy ifs and loops
 // TODO Async IO
 // TODO prevent_busyloop() function
 // TODO crossplatform timing
+long long __seq_get_time_ns();
+
+#ifndef seq_get_time_ns
+
+#define seq_get_time_ns __seq_get_time_ns 
+
+#endif //ndef seq_get_time_ns
 
 
 typedef struct {
@@ -27,7 +38,98 @@ SeqThread seq_thread() {
     return ret;
 }
 
+void seq_miss_cicle();
+
+void seq_sleep(double seconds);
+
+void seq_start();
+
+int seq_check();
+
+void seq_goto_index(int index);
+
+void seq_goto_index_if_positive(int index);
+bool seq_goto_index_if_not(int index, bool cond);
+
+void seq_sync_both(SeqThread* a, SeqThread* b);
+void seq_sync_any(SeqThread* a, SeqThread* b);
+
+#define seq if(seq_check())
+
+#define seq_break seq_goto_index(out)
+
+#define seq_while(cond, ...)                   \
+    do {                                        \
+        int label = seq_current_thread->index+1; \
+        static int out;                           \
+        seq_goto_index_if_not(out, (cond));        \
+            __VA_ARGS__                             \
+        seq_goto_index(label);                       \
+        out = seq_current_thread->index+1;            \
+    } while(0);
+
+#define COMBINE1(X,Y) X##Y  // helper
+#define COMBINE(X,Y) COMBINE1(X,Y)
+
+#define seq_if(cond, ...)                                  \
+    static int COMBINE(elze, __LINE__);                     \
+    seq do_else = true;                                      \
+    seq_goto_index_if_not(COMBINE(elze, __LINE__), (cond));   \
+        do {                                                   \
+            static char do_else;                                \
+            __VA_ARGS__                                          \
+        } while(0);                                               \
+        seq {                                                      \
+            if (do_else == -1) seq_current_thread->do_else = false; \
+            else do_else = false;                                    \
+        }                                                             \
+    COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
+
+#define seq_else_if(cond, ...)                                                            \
+    static int COMBINE(elze, __LINE__);                                                    \
+    seq_goto_index_if_not(COMBINE(elze, __LINE__),                                          \
+                          (do_else == -1 ? seq_current_thread->do_else : do_else) && (cond));\
+        do {                                                                                  \
+            static char do_else;                                                               \
+            __VA_ARGS__                                                                         \
+        } while(0);                                                                              \
+        seq {                                                                                     \
+            if (do_else == -1) seq_current_thread->do_else = false;                                \
+            else do_else = false;                                                                   \
+        }                                                                                            \
+    COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
+
+#define seq_else(...)                                                                                     \
+    static int COMBINE(elze, __LINE__);                                                                    \
+    seq_goto_index_if_not(COMBINE(elze, __LINE__), (do_else == -1 ? seq_current_thread->do_else : do_else));\
+        do {                                                                                                 \
+            static char do_else;                                                                              \
+            __VA_ARGS__                                                                                        \
+        } while(0);                                                                                             \
+    COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
+
+#define seqv(varname) static varname; seq varname
+
+#define seq_for(vardef, cond, increment, ...) \
+vardef;                                        \
+seq_while(cond,                                 \
+    __VA_ARGS__                                  \
+    seq {increment;}                              \
+)
+
+#endif // SEQ_H_
+
+#ifdef SEQ_IMPLEMENTATION
+
+long long __seq_get_time_ns() {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) return -1;
+    return ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+
 SeqThread* seq_current_thread;
+
+static char do_else = -1;
 
 void seq_miss_cicle() {
     seq_current_thread->index += 1;
@@ -115,129 +217,4 @@ void seq_sync_any(SeqThread* a, SeqThread* b) {
 }
 
 
-#define seq if(seq_check())
-
-#define seq_break seq_goto_index(out)
-
-#define seq_while(cond, ...)                   \
-    do {                                        \
-        int label = seq_current_thread->index+1; \
-        static int out;                           \
-        seq_goto_index_if_not(out, (cond));        \
-            __VA_ARGS__                             \
-        seq_goto_index(label);                       \
-        out = seq_current_thread->index+1;            \
-    } while(0);
-
-#define COMBINE1(X,Y) X##Y  // helper
-#define COMBINE(X,Y) COMBINE1(X,Y)
-
-#define seq_if(cond, ...)                                  \
-    static int COMBINE(elze, __LINE__);                     \
-    seq do_else = true;                                      \
-    seq_goto_index_if_not(COMBINE(elze, __LINE__), (cond));   \
-        do {                                                   \
-            static char do_else;                                \
-            __VA_ARGS__                                          \
-        } while(0);                                               \
-        seq {                                                      \
-            if (do_else == -1) seq_current_thread->do_else = false; \
-            else do_else = false;                                    \
-        }                                                             \
-    COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
-
-#define seq_else_if(cond, ...)                                                            \
-    static int COMBINE(elze, __LINE__);                                                    \
-    seq_goto_index_if_not(COMBINE(elze, __LINE__),                                          \
-                          (do_else == -1 ? seq_current_thread->do_else : do_else) && (cond));\
-        do {                                                                                  \
-            static char do_else;                                                               \
-            __VA_ARGS__                                                                         \
-        } while(0);                                                                              \
-        seq {                                                                                     \
-            if (do_else == -1) seq_current_thread->do_else = false;                                \
-            else do_else = false;                                                                   \
-        }                                                                                            \
-    COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
-
-#define seq_else(...)                                                                                     \
-    static int COMBINE(elze, __LINE__);                                                                    \
-    seq_goto_index_if_not(COMBINE(elze, __LINE__), (do_else == -1 ? seq_current_thread->do_else : do_else));\
-        do {                                                                                                 \
-            static char do_else;                                                                              \
-            __VA_ARGS__                                                                                        \
-        } while(0);                                                                                             \
-    COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
-
-static char do_else = -1;
-
-#define seqv(varname) static varname; seq varname
-
-#define seq_for(vardef, cond, increment, ...) \
-vardef;                                        \
-seq_while(cond,                                 \
-    __VA_ARGS__                                  \
-    seq {increment;}                              \
-)
-
-int main(void) {
-    SeqThread thread1 = seq_thread();
-    SeqThread thread2 = seq_thread();
-
-    #define T1 seq_current_thread = &thread1;
-    #define T2 seq_current_thread = &thread2;
-
-    while (1) {
-        T1 seq_start();
-
-        seq puts("bim");
-
-        // int label_0 = seq_current_thread->index+1;
-        // static int out; seq_goto_index_if_not(out, j < 3);
-        
-        seq_for(int seqv(j) = 0, j < 3, ++j,
-            seq puts("bam");
-            seq puts("bum");
-            seq_for(int seqv(k) = 0, k < 2, ++k,
-                seq printf("hello %d\n", k);
-            )
-        )
-
-        
-        static int x = 4;
-        seq_if(x > 0,
-            seq puts("x positive!");
-        ) 
-
-        static int y = 0;
-        seq_if(y > 0,
-            seq puts("y positive!");
-        ) seq_else_if (y%2 == 0,
-            seq_if (y == 0,
-                seq puts("y is zero!");
-            ) seq_else (
-                seq puts("y negative and even!");
-            )
-        ) seq_else (
-            seq puts("wiii!");
-        )
-        
-        T2 seq_start();
-        seq puts("Hello from thread 2");
-        static int z = -4;
-        seq_if(z > 0,
-            seq puts("z positive!");
-        ) seq_else_if (z%2 == 0,
-            seq_if (z == 0,
-                seq puts("z is zero!");
-            ) seq_else (
-                seq puts("z negative and even!");
-            )
-        ) seq_else (
-            seq puts("wiii!");
-        )
-
-
-        sleep(1);
-    }
-}
+#endif // SEQ_IMPLEMENTATION
