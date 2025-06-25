@@ -63,19 +63,16 @@ int main() {
     }
     
     while(1) {
-        T1
-        seq_start();
+        T1 seq_start();
         seq printf("Find closest prime after: ");
         bool seqv(responded) = false;
         long seqv(n);
         int ret = seq_scanf("%ld", &n);
         seq_if (ret < 1,
             seq gets(temp_buffer); // stay safe kids ;)
-            seq {
-                if (strcmp(temp_buffer, "q") == 0) {
-                    exit(0);
-                }
-            }
+            seq_if (strcmp(temp_buffer, "q") == 0,
+                seq exit(0);
+            )
             seq printf("Invalid input: %s\n", temp_buffer);
             seq_reset();
         )
@@ -84,7 +81,8 @@ int main() {
                 if (!pool.is_active[ti]) {
                     pool.is_active[ti] = true;
                     pool.threads[ti] = seq_thread();
-                    // This makes it so the first variable declared in thread "ti" will have n as a value by default
+                    // This makes it so the first variable declared 
+                    // in thread "ti" will have n as a value by default
                     seq_load_into_stack(&pool.threads[ti], n);
                     break;
                 }
@@ -103,13 +101,13 @@ int main() {
 
                 long seqv(start); // load from initialization 
                 long seqv(possible_prime) = start;
-                
-                int try_again = seq_current_thread->index+1;
+
+                int try_again = seq_label();
 
                 seq_for (long seqv(i)=possible_prime/2, i>1, --i,
                     seq_if (possible_prime % i == 0,
                         seq possible_prime += 1;
-                        seq_goto_index(try_again);
+                        seq_goto(try_again);
                     )
                 )
                 seq {

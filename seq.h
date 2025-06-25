@@ -7,12 +7,10 @@
 #include <time.h>
 #include <limits.h>
 
-// TODO Independent memory across threads
-// TODO Lazy ifs and loops
+// TODO Option to disable control flow and independent memory
 // TODO Async IO
 // TODO prevent_busyloop() function
 // TODO crossplatform timing
-
 
 #define SEQ_DISABLE INT_MIN
 
@@ -26,17 +24,14 @@ typedef struct {
 #define SEQ_SAVE_VARS             1
 #define SEQ_NO_INDEPENDENT_MEMORY 2
 
-int seq_init_independent_memory();
-
-#define seq_independent_memory for (seq_current_thread->mem_mode = seq_init_independent_memory(); seq_current_thread->mem_mode < 2; seq_init_independent_memory(), ++seq_current_thread->mem_mode)
+#define seq_independent_memory \
+    for (seq_current_thread->mem_mode=0; seq_current_thread->mem_mode < 2; ++seq_current_thread->mem_mode)
 
 long long __seq_get_time_ns();
 
 #ifndef seq_get_time_ns
-
 #define seq_get_time_ns __seq_get_time_ns 
-
-#endif //ndef seq_get_time_ns
+#endif
 
 
 typedef struct {
@@ -64,19 +59,13 @@ SeqThread seq_thread() {
 }
 
 void seq_miss_cicle();
-
 void seq_sleep(double seconds);
-
 void seq_start();
-
 int seq_check();
-
 void seq_reset();
 
-void seq_goto_index(int index);
-
-void seq_goto_index_if_positive(int index);
-bool seq_goto_index_if_not(int index, bool cond);
+void seq_goto(int index);
+int seq_label();
 
 void seq_sync_both(SeqThread* a, SeqThread* b);
 void seq_sync_any(SeqThread* a, SeqThread* b);
@@ -84,15 +73,15 @@ void seq_wait_for(SeqThread* t);
 
 #define seq if(seq_check())
 
-#define seq_break seq_goto_index(out)
+#define seq_break seq_goto(out)
 
 #define seq_while(cond, ...)                   \
     do {                                        \
         int label = seq_current_thread->index+1; \
         static int out;                           \
-        seq_goto_index_if_not(out, (cond));        \
+        seq_goto_if_not(out, (cond));              \
             __VA_ARGS__                             \
-        seq_goto_index(label);                       \
+        seq_goto(label);                             \
         out = seq_current_thread->index+1;            \
     } while(0);
 
@@ -102,7 +91,7 @@ void seq_wait_for(SeqThread* t);
 #define seq_if(cond, ...)                                  \
     static int COMBINE(elze, __LINE__);                     \
     seq do_else = true;                                      \
-    seq_goto_index_if_not(COMBINE(elze, __LINE__), (cond));   \
+    seq_goto_if_not(COMBINE(elze, __LINE__), (cond));         \
         do {                                                   \
             static char do_else;                                \
             __VA_ARGS__                                          \
@@ -115,7 +104,7 @@ void seq_wait_for(SeqThread* t);
 
 #define seq_else_if(cond, ...)                                                            \
     static int COMBINE(elze, __LINE__);                                                    \
-    seq_goto_index_if_not(COMBINE(elze, __LINE__),                                          \
+    seq_goto_if_not(COMBINE(elze, __LINE__),                                                \
                           (do_else == -1 ? seq_current_thread->do_else : do_else) && (cond));\
         do {                                                                                  \
             static char do_else;                                                               \
@@ -127,18 +116,18 @@ void seq_wait_for(SeqThread* t);
         }                                                                                            \
     COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
 
-#define seq_else(...)                                                                                     \
-    static int COMBINE(elze, __LINE__);                                                                    \
-    seq_goto_index_if_not(COMBINE(elze, __LINE__), (do_else == -1 ? seq_current_thread->do_else : do_else));\
-        do {                                                                                                 \
-            static char do_else;                                                                              \
-            __VA_ARGS__                                                                                        \
-        } while(0);                                                                                             \
+#define seq_else(...)                                                                                \
+    static int COMBINE(elze, __LINE__);                                                               \
+    seq_goto_if_not(COMBINE(elze, __LINE__), (do_else == -1 ? seq_current_thread->do_else : do_else)); \
+        do {                                                                                            \
+            static char do_else;                                                                         \
+            __VA_ARGS__                                                                                   \
+        } while(0);                                                                                        \
     COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
 
-#define seq_load_into_stack(thread_ptr, variable) \
-        do {\
-            (thread_ptr)->stack.place -= sizeof(variable);\
+#define seq_load_into_stack(thread_ptr, variable)        \
+        do {                                              \
+            (thread_ptr)->stack.place -= sizeof(variable); \
             memcpy(&(thread_ptr)->stack.data[(thread_ptr)->stack.place], &variable, sizeof(variable));\
         } while(0);
 
@@ -160,6 +149,16 @@ seq_while(cond,                                 \
     __VA_ARGS__                                  \
     seq {increment;}                              \
 )
+
+#define seq_goto_if_not(dst, cond)                                \
+    seq_current_thread->index += 1;                                \
+    if (seq_current_thread->index == seq_current_thread->counter) { \
+        if ((cond)) {                                                \
+            seq_current_thread->counter++;                            \
+        } else {                                                       \
+            seq_current_thread->counter = dst;                          \
+        }                                                                \
+    }
 
 #endif // SEQ_H_
 
@@ -228,34 +227,14 @@ void seq_reset() {
     }
 }
 
-void seq_goto_index(int index) {
+void seq_goto(int index) {
     seq_current_thread->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) { 
         seq_current_thread->counter = index;
     }
 }
-
-void seq_goto_index_if_positive(int index) {
-    seq_current_thread->index += 1;
-    if (seq_current_thread->index == seq_current_thread->counter) { 
-        if (index < 0) {
-            seq_current_thread->counter++;
-        } else {
-            seq_current_thread->counter = index;
-        }
-    }
-}
-
-bool seq_goto_index_if_not(int index, bool cond) {
-    seq_current_thread->index += 1;
-    if (seq_current_thread->index == seq_current_thread->counter) { 
-        if (cond) {
-            seq_current_thread->counter++;
-        } else {
-            seq_current_thread->counter = index;
-        }
-    }
-    return true;
+int seq_label() {
+    return seq_current_thread->index+1;
 }
 
 void seq_sync_both(SeqThread* a, SeqThread* b) {
@@ -274,31 +253,6 @@ void seq_sync_any(SeqThread* a, SeqThread* b) {
         a->counter = a->index + 1; 
         b->counter = b->index + 1; 
     }
-}
-
-void seq_wait_for(SeqThread* t) {
-    seq_current_thread->index += 1;
-    t->index += 1;
-    if (seq_current_thread->index == seq_current_thread->counter) {
-        printf("counter: %d\n", t->counter);
-        printf("index: %d\n", t->index);
-        if (t->counter == t->index) {
-            seq_current_thread->counter += 1;
-            puts("advancing");
-            t->counter += 1;
-        } else if (t->counter > t->index) {
-            seq_current_thread->counter += 1;
-            puts("advancing2");
-        } 
-    }
-}
-
-int seq_init_independent_memory() {
-    // seq_current_thread->stack.place = SEQ_STACK_SIZE;
-    // if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
-    //     seq_current_thread->counter = SEQ_DISABLE;
-    // }
-    return 0;
 }
 
 #endif // SEQ_IMPLEMENTATION
