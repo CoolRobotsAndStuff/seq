@@ -22,7 +22,7 @@ int seq_scanf(const char* fmt, ...) {
 
         if (ret < 0) {
             if (errno == EAGAIN) {
-                return -2;
+                return INT_MIN;
             }
             perror("seq_scanf");
             seq_current_thread->counter += 1;
@@ -67,31 +67,31 @@ int main() {
         seq_start();
         seq printf("Find closest prime after: ");
         bool seqv(responded) = false;
-        long long seqv(n);
-        int ret = seq_scanf("%lld", &n);
-        seq_if (ret != -2 && ret < 1,
+        long seqv(n);
+        int ret = seq_scanf("%ld", &n);
+        seq_if (ret < 1,
             seq gets(temp_buffer); // stay safe kids ;)
-            if (strcmp(temp_buffer, "q") == 0) {
-                exit(0);
+            seq {
+                if (strcmp(temp_buffer, "q") == 0) {
+                    exit(0);
+                }
             }
             seq printf("Invalid input: %s\n", temp_buffer);
             seq_reset();
         )
-
         seq {
             for (int ti = 0; ti < SEQ_POOL_CAPACITY; ++ti) {
                 if (!pool.is_active[ti]) {
                     pool.is_active[ti] = true;
                     pool.threads[ti] = seq_thread();
+                    // This makes it so the first variable declared in thread "ti" will have n as a value by default
                     seq_load_into_stack(&pool.threads[ti], n);
                     break;
                 }
             }
         }
-
         seq responded = true;
-
-        T1 seq_reset();
+        seq_reset();
 
 
         for (int ti = 0; ti < SEQ_POOL_CAPACITY; ++ti) {
@@ -100,45 +100,25 @@ int main() {
             seq_current_thread = &pool.threads[ti];
             seq_independent_memory {
                 seq_start();
-                seq_wait_for(&thread1);
 
-                long long seqv(start); // load from initialization
-                long long seqv(possible_prime) = start; 
-                bool seqv(found) = false;
-                long long seqv(i) = 0;
-                bool seqv(is_prime) = true;
+                long seqv(start); // load from initialization 
+                long seqv(possible_prime) = start;
+                
+                int try_again = seq_current_thread->index+1;
 
-
-                seq_while (!found,
-                    //seq printf("mem_mode: %d\n", seq_current_thread->mem_mode);
-                    //seq printf("start: %lld\n", start);
-                    // seq printf("possible_prime: %lld\n", possible_prime);
-                    seq is_prime = true;
-                    seq i = possible_prime-1;
-
-                    seq_while (i>1,
-                        seq_if (possible_prime % i == 0,
-                            seq is_prime = false;
-                            seq_break;
-                        )
-                        seq i--;
-                        //seq printf("i: %lld\n", i);
-                    )
-
-                    seq_if (is_prime,
-                        seq {
-                            if (!responded) printf("\n\033[F\033[K");
-                            printf("Closest prime after %lld is %lld\n", start, possible_prime);
-                            if (!responded) printf("Find closest prime after: ");
-                            found = true;
-                        }
-                        seq_break;
-                    ) seq_else (
+                seq_for (long seqv(i)=possible_prime/2, i>1, --i,
+                    seq_if (possible_prime % i == 0,
                         seq possible_prime += 1;
+                        seq_goto_index(try_again);
                     )
-
                 )
-                seq found = false;
+                seq {
+                    // The "responded" variable is accessible by all threads, since it
+                    // wasn't declared under "seq_independent_memory"
+                    if (!responded) printf("\n\033[F\033[K"); 
+                    printf("Closest prime after %ld is %ld\n", start, possible_prime);
+                    if (!responded) printf("Find closest prime after: ");
+                }
                 seq pool.is_active[ti] = false;
 
             } // seq_independent_memory

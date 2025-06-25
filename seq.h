@@ -14,7 +14,7 @@
 // TODO crossplatform timing
 
 
-#define SEQ_DISABLE INT_MAX
+#define SEQ_DISABLE INT_MIN
 
 #define SEQ_STACK_SIZE 1000
 typedef struct {
@@ -42,6 +42,7 @@ long long __seq_get_time_ns();
 typedef struct {
     int index;
     int counter;
+    int counter_bkp;
     char do_else;
     bool missed;
     long long delay_start;
@@ -53,6 +54,7 @@ SeqThread seq_thread() {
     SeqThread ret;
     ret.index   = 0;
     ret.counter = 1;
+    ret.counter_bkp = 1;
     ret.do_else = 0;
     ret.delay_start = -1;
     ret.missed = false;
@@ -201,7 +203,10 @@ void seq_start() {
 
     seq_current_thread->stack.place = SEQ_STACK_SIZE;
     if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
-        seq_current_thread->index = SEQ_DISABLE;
+        seq_current_thread->counter_bkp = seq_current_thread->counter;
+        seq_current_thread->counter = SEQ_DISABLE;
+    } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {
+         seq_current_thread->counter = seq_current_thread->counter_bkp;
     }
 
     seq_miss_cicle();
@@ -221,7 +226,6 @@ void seq_reset() {
         seq_current_thread->counter = 1;
         seq_current_thread->delay_start = -1;
     }
-    seq_current_thread->index = SEQ_DISABLE;
 }
 
 void seq_goto_index(int index) {
@@ -276,20 +280,24 @@ void seq_wait_for(SeqThread* t) {
     seq_current_thread->index += 1;
     t->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) {
+        printf("counter: %d\n", t->counter);
+        printf("index: %d\n", t->index);
         if (t->counter == t->index) {
             seq_current_thread->counter += 1;
+            puts("advancing");
             t->counter += 1;
         } else if (t->counter > t->index) {
             seq_current_thread->counter += 1;
+            puts("advancing2");
         } 
     }
 }
 
 int seq_init_independent_memory() {
-    seq_current_thread->stack.place = SEQ_STACK_SIZE;
-    if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
-        seq_current_thread->index = SEQ_DISABLE;
-    }
+    // seq_current_thread->stack.place = SEQ_STACK_SIZE;
+    // if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
+    //     seq_current_thread->counter = SEQ_DISABLE;
+    // }
     return 0;
 }
 
