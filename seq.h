@@ -1,15 +1,17 @@
 #ifndef SEQ_H_
 #define SEQ_H_
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdbool.h>
 #include <time.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 
-// TODO Option to disable control flow and independent memory
 // TODO Async IO
-// TODO prevent_busyloop() function
+// TODO Option to disable control flow and independent memory
 // TODO crossplatform timing
 
 #define SEQ_DISABLE INT_MIN
@@ -69,7 +71,8 @@ int seq_label();
 
 void seq_sync_both(SeqThread* a, SeqThread* b);
 void seq_sync_any(SeqThread* a, SeqThread* b);
-void seq_wait_for(SeqThread* t);
+
+int seq_scanf(const char* fmt, ...);
 
 #define seq if(seq_check())
 
@@ -253,6 +256,42 @@ void seq_sync_any(SeqThread* a, SeqThread* b) {
         a->counter = a->index + 1; 
         b->counter = b->index + 1; 
     }
+}
+
+int seq_scanf(const char* fmt, ...) {
+    // non-blocking stdin
+    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    if (flags == -1) return -1;
+    if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) {
+        return -1;
+    }
+
+    seq_current_thread->index += 1;
+    if (seq_current_thread->index == seq_current_thread->counter) {
+        va_list args;
+        int ret;
+        va_start(args, fmt);
+        ret = vscanf(fmt, args);
+        va_end(args);
+
+        if (ret < 0) {
+            if (errno == EAGAIN)
+                return INT_MIN;
+            seq_current_thread->counter += 1;
+            return -1;
+        } else {
+            seq_current_thread->counter += 1;
+            return ret;
+        }
+    }
+
+    // go back to blocking
+    flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    if (flags == -1) return -1;
+    if (fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK) == -1) {
+        return -1;
+    }
+    return 0;
 }
 
 #endif // SEQ_IMPLEMENTATION
