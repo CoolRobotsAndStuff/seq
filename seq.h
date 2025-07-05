@@ -9,6 +9,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdint.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <conio.h>
+#endif
 
 // TODO Async IO
 // TODO Option to disable control flow and independent memory
@@ -29,11 +35,8 @@ typedef struct {
 #define seq_independent_memory \
     for (seq_current_thread->mem_mode=0; seq_current_thread->mem_mode < 2; ++seq_current_thread->mem_mode)
 
-long long __seq_get_time_ns();
 
-#ifndef seq_get_time_ns
-#define seq_get_time_ns __seq_get_time_ns 
-#endif
+int64_t seq_get_time_ns(void);
 
 
 typedef struct {
@@ -42,7 +45,7 @@ typedef struct {
     int counter_bkp;
     char do_else;
     bool missed;
-    long long delay_start;
+    int64_t delay_start;
     SeqStack stack;
     int mem_mode;
 } SeqThread;
@@ -162,16 +165,48 @@ seq_while(cond,                                 \
             seq_current_thread->counter = dst;                          \
         }                                                                \
     }
-
 #endif // SEQ_H_
 
 #ifdef SEQ_IMPLEMENTATION
 
-long long __seq_get_time_ns() {
-    struct timespec ts;
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) return -1;
-    return ts.tv_sec * 1000000000LL + ts.tv_nsec;
+#ifdef SEQ_CUSTOM_TIME
+/* Provided by user. */
+#elif defined(_WIN32)
+int64_t seq_get_time_ns() {
+    static LARGE_INTEGER frequency;
+    static bool initialized = false;
+    QueryPerformanceFrequency(&frequency); 
+    initialized = true;
+
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+    counter.QuadPart *= 1000000000;
+    counter.QuadPart /= frequency.QuadPart;
+    return counter.QuadPart;
 }
+
+#elif defined(__unix__)
+int64_t seq_get_time_ns(void) {
+    struct timespec ts;
+    #ifdef CLOCK_MONOTONIC
+        if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+            return ts.tv_sec * 1000000000LL + ts.tv_nsec;
+        }
+    #endif
+    #ifdef CLOCK_REALTIME
+        if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+            return ts.tv_sec * 1000000000LL + ts.tv_nsec;
+        }
+    #endif
+    puts("Error: seq_get_time_ns");
+    exit(1);
+}
+
+#else
+    #error\
+    seq_get_time_ns() not implemented for this platform.\
+    Define the SEQ_CUSTOM_TIME macro and provide your own implementation of the seq_get_time_ns() function.
+#endif
 
 SeqThread* seq_current_thread;
 
@@ -189,7 +224,7 @@ void seq_sleep(double seconds) {
     SeqThread* t = seq_current_thread;
     t->index += 1;
     if (t->index == t->counter) { 
-        long long nanoseconds = seconds * 1000 * 1000 * 1000;
+        int64_t nanoseconds = (seconds * 1000.0f * 1000.0f * 1000.0f);
         if (t->delay_start < 0) { 
             t->delay_start = seq_get_time_ns();
         }
@@ -230,6 +265,11 @@ void seq_reset() {
     }
 }
 
+void seq_always_reset() {
+    seq_current_thread->counter = 1;
+    seq_current_thread->delay_start = -1;
+}
+
 void seq_goto(int index) {
     seq_current_thread->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) { 
@@ -258,40 +298,91 @@ void seq_sync_any(SeqThread* a, SeqThread* b) {
     }
 }
 
+#if defined(__unix__)
+
 int seq_scanf(const char* fmt, ...) {
+    static int ret;
+
     // non-blocking stdin
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    if (flags == -1) return -1;
-    if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) {
-        return -1;
-    }
+
+    if (flags == -1) goto on_error;
+    if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) goto on_error;
 
     seq_current_thread->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) {
         va_list args;
-        int ret;
         va_start(args, fmt);
-        ret = vscanf(fmt, args);
+        int temp_ret = vscanf(fmt, args);
         va_end(args);
 
-        if (ret < 0) {
-            if (errno == EAGAIN)
-                return INT_MIN;
+        if (!(temp_ret < 0 && errno == EAGAIN)) {
             seq_current_thread->counter += 1;
-            return -1;
-        } else {
-            seq_current_thread->counter += 1;
-            return ret;
+            ret = temp_ret;
         }
     }
+    if (fcntl(STDIN_FILENO, F_SETFL, flags) == -1) goto on_error;
+    return ret;
 
-    // go back to blocking
-    flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    if (flags == -1) return -1;
-    if (fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK) == -1) {
-        return -1;
-    }
-    return 0;
+on_error:
+    ret = -1;
+    return ret;
 }
+
+#elif defined(_WIN32)
+
+int seq_scanf(const char* fmt, ...) {
+    static int ret;
+    seq_current_thread->index += 1;
+    if (seq_current_thread->index == seq_current_thread->counter) {
+        #define SEQ_INPUT_EVENT_BUF_SIZE 128
+        INPUT_RECORD event_buffer[SEQ_INPUT_EVENT_BUF_SIZE];
+
+        static DWORD event_count, already_read;
+        HANDLE std_input = GetStdHandle(STD_INPUT_HANDLE);
+        PeekConsoleInput(std_input, event_buffer, SEQ_INPUT_EVENT_BUF_SIZE, &event_count);
+
+        static char strbuff[1024];
+        static int strbuff_index = 0;
+
+        for (int i = already_read; i < event_count; ++i) {
+            if (event_buffer[i].EventType == KEY_EVENT && event_buffer[i].Event.KeyEvent.bKeyDown) {
+                char c = event_buffer[i].Event.KeyEvent.uChar.AsciiChar;
+                switch (c) {
+                case 0: break;
+                case '\r':
+                    strbuff[strbuff_index] = '\0';
+                    printf("\r\n");
+
+                    va_list args;
+                    va_start(args, fmt);
+                        ret = vsscanf(strbuff, fmt, args);
+                    va_end(args);
+
+                    strbuff_index = 0;
+                    already_read  = 0;
+                    if (ret != 0) {
+                        FlushConsoleInputBuffer(std_input);
+                    }
+                    seq_current_thread->counter++;
+                    return ret;
+
+                case '\b':
+                    strbuff_index--;
+                    printf("\b \b");
+                    break;
+
+                default: 
+                    strbuff[strbuff_index++] = c;
+                    putchar(c);
+                }
+            }
+        }
+        already_read = event_count;
+    }
+    return ret;
+}
+
+#endif
 
 #endif // SEQ_IMPLEMENTATION
