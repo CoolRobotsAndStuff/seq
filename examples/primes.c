@@ -1,16 +1,15 @@
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <stdbool.h>
 #include <stdio.h>
+#include <time.h>
+
 #define SEQ_IMPLEMENTATION
+#define SEQ_MANUAL_NONBLOCKING_STDIN
 #include "../seq.h"
 
 #define SEQ_POOL_CAPACITY 10
  
 typedef struct {
     SeqThread threads[SEQ_POOL_CAPACITY];
-    bool is_active[SEQ_POOL_CAPACITY];
+    int next_inactive;
 } SeqThreadPool;
 
 void clear_line() {
@@ -22,53 +21,48 @@ void clear_line() {
     FillConsoleOutputCharacter(console, ' ', csbi.dwSize.X, beggining_of_line, NULL);
     SetConsoleCursorPosition(console, beggining_of_line);
 #else
-    printf("\n\033[F\033[K");
+    printf("\r\033[K");
 #endif
 }
 
+void flush_stdin() { for (int c=' ';  c!='\n' && c!=EOF; c=getchar()); }
 
 int main() {
+    seq_set_stdin_nonblocking();
     SeqThread input_thread = seq_thread();
     SeqThreadPool pool = {0};
-
+    
     while(1) {
         seq_current_thread = &input_thread;
 
         seq_start();
-        seq_sleep(0.001); // Make input thread less frequent
+        seq_miss_cycles(500);
 
-        bool seqv(responded) = false;
-        seq printf("Find closest prime after: ");
         long seqv(n);
+        seq clear_line();
+        seq printf("Find closest prime after: ");
         int ret = seq_scanf("%ld", &n);
         seq_if (ret == 0,
-            seq_if (getchar() == 'q',
-                seq exit(0);
-            )
-            seq printf("Invalid input.\n");
+            seq if (getchar() == 'q') return 0;
+            seq printf("Invalid input\n");
+            seq flush_stdin(); // Flush stdin
             seq_reset();
         )
-        seq {
-            for (int ti = 0; ti < SEQ_POOL_CAPACITY; ++ti) {
-                if (!pool.is_active[ti]) {
-                    pool.is_active[ti] = true;
-                    pool.threads[ti] = seq_thread();
-                    seq_load_into_stack(&pool.threads[ti], n); // Passing value of n to new thread
-                    break;
-                }
+
+        seq_if (pool.next_inactive >= SEQ_POOL_CAPACITY,
+            seq puts("Too many threads, please wait for one to finish.");
+        ) seq_else (
+            seq {
+                SeqThread new_thread = seq_thread();
+                seq_load_into_stack(&new_thread, n); // Passing value of n to new thread
+                pool.threads[pool.next_inactive++] = new_thread;
             }
-        }
-        seq responded = true;
+        )
         seq_reset();
+
         // end of input_thread
 
-
-        bool calculating = false;
-        for (int ti = 0; ti < SEQ_POOL_CAPACITY; ++ti) {
-            if (!pool.is_active[ti]) continue;
-
-            calculating = true;
-
+        for (int ti = 0; ti < pool.next_inactive; ++ti) {
             seq_current_thread = &pool.threads[ti];
             seq_independent_memory { // This makes the variables different for every thread
                 seq_start();
@@ -85,16 +79,23 @@ int main() {
                     )
                 )
                 seq {
-                    if (!responded) clear_line();
+                    clear_line();
                     printf("Closest prime after %ld is %ld\n", start, possible_prime);
-                    if (!responded) printf("Find closest prime after: ");
+                    printf("Find closest prime after: ");
                 }
-                seq pool.is_active[ti] = false;
 
+                seq pool.threads[ti] = pool.threads[--pool.next_inactive];
             }
         }
 
-        if (!calculating) usleep(1); // prevent busylooping
+        if (pool.next_inactive == 0) {
+            // prevent busylooping
+            #ifdef __unix__
+            usleep(1);
+            #else
+            Sleep(1/10000);
+            #endif
+        } 
     }
     return 0;
 }

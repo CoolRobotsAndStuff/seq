@@ -3,26 +3,32 @@
 
 #include <stdarg.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <stdbool.h>
-#include <time.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <limits.h>
 #include <stdint.h>
+#include <limits.h>
+#include <string.h>
 
-#if defined(_WIN32)
-#include <windows.h>
-#include <conio.h>
+#ifdef __unix__
+#   include <time.h>
+#   include <unistd.h>
+#   include <errno.h>
+#   include <fcntl.h>
 #endif
 
-// TODO Async IO
-// TODO Option to disable control flow and independent memory
-// TODO crossplatform timing
+#ifdef _WIN32
+#   include <windows.h>
+#   include <conio.h>
+#endif
+
+// TODO Nonblocking IO for all functions in stdlib
+// TODO Option to disable control flow and independent memory for arduino and mac
+// TODO Timing for arduino and mac
 
 #define SEQ_DISABLE INT_MIN
 
+#ifndef SEQ_STACK_SIZE
 #define SEQ_STACK_SIZE 1000
+#endif
 typedef struct {
     char data[SEQ_STACK_SIZE];
     size_t place;
@@ -35,10 +41,6 @@ typedef struct {
 #define seq_independent_memory \
     for (seq_current_thread->mem_mode=0; seq_current_thread->mem_mode < 2; ++seq_current_thread->mem_mode)
 
-
-int64_t seq_get_time_ns(void);
-
-
 typedef struct {
     int index;
     int counter;
@@ -48,29 +50,19 @@ typedef struct {
     int64_t delay_start;
     SeqStack stack;
     int mem_mode;
+    unsigned int cycle_counter;
 } SeqThread;
 
-SeqThread seq_thread() {
-    SeqThread ret;
-    ret.index   = 0;
-    ret.counter = 1;
-    ret.counter_bkp = 1;
-    ret.do_else = 0;
-    ret.delay_start = -1;
-    ret.missed = false;
-    ret.mem_mode = SEQ_NO_INDEPENDENT_MEMORY;;
-    ret.stack.place = SEQ_STACK_SIZE;
-    return ret;
-}
+SeqThread seq_thread();
 
-void seq_miss_cicle();
-void seq_sleep(double seconds);
 void seq_start();
-int seq_check();
+bool seq_check();
 void seq_reset();
+void seq_sleep(double seconds);
+int64_t seq_get_time_ns(void);
 
-void seq_goto(int index);
 int seq_label();
+void seq_goto(int index);
 
 void seq_sync_both(SeqThread* a, SeqThread* b);
 void seq_sync_any(SeqThread* a, SeqThread* b);
@@ -137,6 +129,13 @@ int seq_scanf(const char* fmt, ...);
             memcpy(&(thread_ptr)->stack.data[(thread_ptr)->stack.place], &variable, sizeof(variable));\
         } while(0);
 
+#define seqin(varname) \
+    static varname;     \
+    seq_current_thread->stack.place -= sizeof(varname);\
+    seq { \
+        memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
+    }
+
 #define seqv(varname)                                                                                      \
     static varname;                                                                                         \
     if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) {                                         \
@@ -169,6 +168,89 @@ seq_while(cond,                                 \
 
 #ifdef SEQ_IMPLEMENTATION
 
+SeqThread* seq_current_thread;
+static char do_else = -1;
+
+SeqThread seq_thread() {
+    SeqThread ret;
+    ret.index   = 0;
+    ret.counter = 1;
+    ret.counter_bkp = 1;
+    ret.do_else = 0;
+    ret.delay_start = -1;
+    ret.missed = false;
+    ret.mem_mode = SEQ_NO_INDEPENDENT_MEMORY;;
+    ret.stack.place = SEQ_STACK_SIZE;
+    ret.cycle_counter = 0;
+    return ret;
+}
+
+void seq_start() {
+    // Miss a single cycle so that all labels have values before beggining the program
+    seq_current_thread->index = 1;
+    if (seq_current_thread->counter == 1) { 
+        if (seq_current_thread->missed) 
+            seq_current_thread->counter += 1;
+        seq_current_thread->missed = true;
+    }
+
+    seq_current_thread->stack.place = SEQ_STACK_SIZE;
+    if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
+        seq_current_thread->counter_bkp = seq_current_thread->counter;
+        seq_current_thread->counter = SEQ_DISABLE;
+    } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {
+         seq_current_thread->counter = seq_current_thread->counter_bkp;
+    }
+
+}
+
+bool seq_check() {
+    seq_current_thread->index++;
+    if (seq_current_thread->index == seq_current_thread->counter) {
+        seq_current_thread->counter += 1;
+        return true;
+    }
+    return false;
+}
+
+void seq_reset() {
+    if (seq_check()) {
+        seq_current_thread->counter = 1;
+        seq_current_thread->delay_start = -1;
+    }
+}
+
+void seq_always_reset() {
+    seq_current_thread->counter = 1;
+    seq_current_thread->delay_start = -1;
+}
+
+int seq_label() {
+    return seq_current_thread->index+1;
+}
+
+void seq_goto(int index) {
+    seq_current_thread->index += 1;
+    if (seq_current_thread->index == seq_current_thread->counter) { 
+        seq_current_thread->counter = index;
+    }
+}
+
+void seq_sleep(double seconds) {
+    SeqThread* t = seq_current_thread;
+    t->index += 1;
+    if (t->index == t->counter) { 
+        int64_t nanoseconds = (seconds * 1000.0f * 1000.0f * 1000.0f);
+        if (t->delay_start < 0) { 
+            t->delay_start = seq_get_time_ns();
+        }
+        if (seq_get_time_ns() - t->delay_start > nanoseconds) {
+            t->delay_start = -1;
+            t->counter += 1;
+        }
+    }
+}
+
 #ifdef SEQ_CUSTOM_TIME
 /* Provided by user. */
 #elif defined(_WIN32)
@@ -199,7 +281,7 @@ int64_t seq_get_time_ns(void) {
         }
     #endif
     puts("Error: seq_get_time_ns");
-    exit(1);
+    return -1;
 }
 
 #else
@@ -208,76 +290,18 @@ int64_t seq_get_time_ns(void) {
     Define the SEQ_CUSTOM_TIME macro and provide your own implementation of the seq_get_time_ns() function.
 #endif
 
-SeqThread* seq_current_thread;
-
-static char do_else = -1;
-
-void seq_miss_cicle() {
-    seq_current_thread->index += 1;
-    if (seq_current_thread->index == seq_current_thread->counter) { 
-        if (seq_current_thread->missed) seq_current_thread->counter += 1;
-        seq_current_thread->missed = !seq_current_thread->missed;
-    }
-}
-
-void seq_sleep(double seconds) {
-    SeqThread* t = seq_current_thread;
-    t->index += 1;
-    if (t->index == t->counter) { 
-        int64_t nanoseconds = (seconds * 1000.0f * 1000.0f * 1000.0f);
-        if (t->delay_start < 0) { 
-            t->delay_start = seq_get_time_ns();
+void seq_miss_cycles(unsigned int cycles) {
+    if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) return;
+    seq_current_thread->cycle_counter++;
+    if (seq_current_thread->cycle_counter < cycles) {
+        if (seq_current_thread->counter != SEQ_DISABLE) {
+            seq_current_thread->counter_bkp = seq_current_thread->counter;
+            seq_current_thread->counter = SEQ_DISABLE;
         }
-        if (seq_get_time_ns() - t->delay_start > nanoseconds) {
-            t->delay_start = -1;
-            t->counter += 1;
-        }
+    } else {
+        seq_current_thread->counter = seq_current_thread->counter_bkp;
+        seq_current_thread->cycle_counter = 0;
     }
-}
-
-void seq_start() { 
-    seq_current_thread->index = 0;
-
-    seq_current_thread->stack.place = SEQ_STACK_SIZE;
-    if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
-        seq_current_thread->counter_bkp = seq_current_thread->counter;
-        seq_current_thread->counter = SEQ_DISABLE;
-    } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {
-         seq_current_thread->counter = seq_current_thread->counter_bkp;
-    }
-
-    seq_miss_cicle();
-}
-
-int seq_check() {
-    seq_current_thread->index += 1;
-    if (seq_current_thread->index == seq_current_thread->counter) {
-        seq_current_thread->counter += 1;
-        return 1;
-    }
-    return 0;
-}
-
-void seq_reset() {
-    if (seq_check()) {
-        seq_current_thread->counter = 1;
-        seq_current_thread->delay_start = -1;
-    }
-}
-
-void seq_always_reset() {
-    seq_current_thread->counter = 1;
-    seq_current_thread->delay_start = -1;
-}
-
-void seq_goto(int index) {
-    seq_current_thread->index += 1;
-    if (seq_current_thread->index == seq_current_thread->counter) { 
-        seq_current_thread->counter = index;
-    }
-}
-int seq_label() {
-    return seq_current_thread->index+1;
 }
 
 void seq_sync_both(SeqThread* a, SeqThread* b) {
@@ -300,17 +324,24 @@ void seq_sync_any(SeqThread* a, SeqThread* b) {
 
 #if defined(__unix__)
 
+int seq_set_stdin_nonblocking() {
+    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    if (flags == -1) return 1;
+    if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) return 1;
+}
+
 int seq_scanf(const char* fmt, ...) {
     static int ret;
 
-    // non-blocking stdin
-    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-
-    if (flags == -1) goto on_error;
-    if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) goto on_error;
-
     seq_current_thread->index += 1;
     if (seq_current_thread->index == seq_current_thread->counter) {
+        #ifndef SEQ_MANUAL_NONBLOCKING_STDIN
+        int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+
+        if (flags == -1) goto on_error;
+        if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) goto on_error;
+        #endif
+
         va_list args;
         va_start(args, fmt);
         int temp_ret = vscanf(fmt, args);
@@ -320,8 +351,11 @@ int seq_scanf(const char* fmt, ...) {
             seq_current_thread->counter += 1;
             ret = temp_ret;
         }
+
+        #ifndef SEQ_MANUAL_NONBLOCKING_STDIN
+        if (fcntl(STDIN_FILENO, F_SETFL, flags) == -1) goto on_error;
+        #endif
     }
-    if (fcntl(STDIN_FILENO, F_SETFL, flags) == -1) goto on_error;
     return ret;
 
 on_error:
@@ -330,6 +364,8 @@ on_error:
 }
 
 #elif defined(_WIN32)
+
+int seq_set_stdin_nonblocking() { return 0; }
 
 int seq_scanf(const char* fmt, ...) {
     static int ret;
@@ -342,7 +378,7 @@ int seq_scanf(const char* fmt, ...) {
         HANDLE std_input = GetStdHandle(STD_INPUT_HANDLE);
         PeekConsoleInput(std_input, event_buffer, SEQ_INPUT_EVENT_BUF_SIZE, &event_count);
 
-        static char strbuff[1024];
+        static char strbuff[1024]; //TODO: I'm not sure what to do about this
         static int strbuff_index = 0;
 
         for (int i = already_read; i < event_count; ++i) {
