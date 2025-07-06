@@ -81,10 +81,10 @@ int main(int argc, char** argv) {
 
     switch (platform) {
         case LINUX:
-            nob_cmd_append(&cmd, "gcc", "-O3");
+            nob_cmd_append(&cmd, "gcc", "-O3", "-Wall", "-Wno-unused-variable", "-Wno-unused-value");
             break;
         case WINDOWS_64:
-            nob_cmd_append(&cmd, "x86_64-w64-mingw32-gcc", "-O3");
+            nob_cmd_append(&cmd, "x86_64-w64-mingw32-gcc", "-O3", "-Wall", "-Wno-unused-variable", "-Wno-unused-value");
             break;
     }
 

@@ -328,6 +328,7 @@ int seq_set_stdin_nonblocking() {
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     if (flags == -1) return 1;
     if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) return 1;
+    return 0;
 }
 
 int seq_scanf(const char* fmt, ...) {
@@ -358,9 +359,11 @@ int seq_scanf(const char* fmt, ...) {
     }
     return ret;
 
+#ifndef SEQ_MANUAL_NONBLOCKING_STDIN
 on_error:
     ret = -1;
     return ret;
+#endif
 }
 
 #elif defined(_WIN32)
