@@ -15,9 +15,30 @@ typedef enum {
 int main(int argc, char** argv) {
     NOB_GO_REBUILD_URSELF(argc, argv);
 
+    nob_mkdir_if_not_exists(BUILD);
+    nob_mkdir_if_not_exists(BUILD"examples");
+
     char* program_name = shift(argv, argc);
 
     if (argc == 0) {
+        printf(
+            "Usage: ./nob target [options]\n"
+            "Options:\n"
+            "    run           - Run executable after compilation.\n"
+            "    windows       - Crosscompile to Windows with mingw.\n"
+            "                    If used with 'run' option run with wineconsole.\n"
+            "                    (requirements: mingw, wine)\n"
+            "    debug         - Include debug information.\n"
+            "                    If used with 'run' option run with gdb.\n"
+            "    valgrind      - Use with the 'run' option. Run the executable with\n"
+            "                    callgrind and launch kcachegrind to see results.\n"
+            "                    (requirements: valgrind, kcachegrind)\n"
+            "    expand_macros - Debug info with all macros expanded.\n"
+            "Examples:\n"
+            "   ./nob examples/primes run\n"
+            "   ./nob examples/primes run windows\n"
+            "   ./nob examples/primes run debug expand_macros\n"
+        );
         nob_log(NOB_ERROR, "No target provided");
         exit(1);
     }
@@ -63,7 +84,7 @@ int main(int argc, char** argv) {
             nob_cmd_append(&cmd, "gcc", "-O3");
             break;
         case WINDOWS_64:
-            nob_cmd_append(&cmd, "x86_64-w64-mingw32-gcc");
+            nob_cmd_append(&cmd, "x86_64-w64-mingw32-gcc", "-O3");
             break;
     }
 
@@ -102,6 +123,20 @@ int main(int argc, char** argv) {
 
             cmd.count = 0;
             cmd_append(&cmd, "kcachegrind", outfile);
+            if (!cmd_run_sync(cmd)) return 1;
+        } else if (debug) { 
+            switch (platform) {
+            case LINUX:
+                cmd_append(&cmd, "gdb", temp_sprintf("%s%s", BUILD, target));
+                break;
+            case WINDOWS_64:
+                nob_log(NOB_WARNING, "Debugging not available for windows, running executable normally");
+                cmd_append(&cmd, 
+                    "wineconsole",
+                    "cmd.exe", "/K",
+                    temp_sprintf("%s%s.exe", BUILD, target)
+                );
+            }
             if (!cmd_run_sync(cmd)) return 1;
         } else {
             switch (platform) {

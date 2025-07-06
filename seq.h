@@ -45,7 +45,7 @@ typedef struct {
     int index;
     int counter;
     int counter_bkp;
-    char do_else;
+    signed char do_else;
     bool missed;
     int64_t delay_start;
     SeqStack stack;
@@ -91,7 +91,7 @@ int seq_scanf(const char* fmt, ...);
     seq do_else = true;                                      \
     seq_goto_if_not(COMBINE(elze, __LINE__), (cond));         \
         do {                                                   \
-            static char do_else;                                \
+            static signed char do_else;                                \
             __VA_ARGS__                                          \
         } while(0);                                               \
         seq {                                                      \
@@ -105,7 +105,7 @@ int seq_scanf(const char* fmt, ...);
     seq_goto_if_not(COMBINE(elze, __LINE__),                                                \
                           (do_else == -1 ? seq_current_thread->do_else : do_else) && (cond));\
         do {                                                                                  \
-            static char do_else;                                                               \
+            static signed char do_else;                                                               \
             __VA_ARGS__                                                                         \
         } while(0);                                                                              \
         seq {                                                                                     \
@@ -118,7 +118,7 @@ int seq_scanf(const char* fmt, ...);
     static int COMBINE(elze, __LINE__);                                                               \
     seq_goto_if_not(COMBINE(elze, __LINE__), (do_else == -1 ? seq_current_thread->do_else : do_else)); \
         do {                                                                                            \
-            static char do_else;                                                                         \
+            static signed char do_else;                                                                         \
             __VA_ARGS__                                                                                   \
         } while(0);                                                                                        \
     COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
@@ -169,7 +169,7 @@ seq_while(cond,                                 \
 #ifdef SEQ_IMPLEMENTATION
 
 SeqThread* seq_current_thread;
-static char do_else = -1;
+static signed char do_else = -1;
 
 SeqThread seq_thread() {
     SeqThread ret;
