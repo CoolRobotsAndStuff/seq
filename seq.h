@@ -27,8 +27,9 @@
 #define SEQ_DISABLE INT_MIN
 
 #ifndef SEQ_STACK_SIZE
-#define SEQ_STACK_SIZE 1000
+#   define SEQ_STACK_SIZE 1000
 #endif
+
 typedef struct {
     char data[SEQ_STACK_SIZE];
     size_t place;
@@ -38,15 +39,15 @@ typedef struct {
 #define SEQ_SAVE_VARS             1
 #define SEQ_NO_INDEPENDENT_MEMORY 2
 
+
 #define seq_independent_memory \
-    for (seq_current_thread->mem_mode=0; seq_current_thread->mem_mode < 2; ++seq_current_thread->mem_mode)
+    for (seq_current_thread->mem_mode=0; seq_next_mem_mode(); ++seq_current_thread->mem_mode)
 
 typedef struct {
     int index;
     int counter;
     int counter_bkp;
     signed char do_else;
-    bool missed;
     int64_t delay_start;
     SeqStack stack;
     int mem_mode;
@@ -68,6 +69,8 @@ void seq_sync_both(SeqThread* a, SeqThread* b);
 void seq_sync_any(SeqThread* a, SeqThread* b);
 
 int seq_scanf(const char* fmt, ...);
+
+int sequtil_usleep(long useconds);
 
 #define seq if(seq_check())
 
@@ -91,7 +94,7 @@ int seq_scanf(const char* fmt, ...);
     seq do_else = true;                                      \
     seq_goto_if_not(COMBINE(elze, __LINE__), (cond));         \
         do {                                                   \
-            static signed char do_else;                                \
+            static signed char do_else;                         \
             __VA_ARGS__                                          \
         } while(0);                                               \
         seq {                                                      \
@@ -114,6 +117,8 @@ int seq_scanf(const char* fmt, ...);
         }                                                                                            \
     COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
 
+#define seq_elif seq_else_if
+
 #define seq_else(...)                                                                                \
     static int COMBINE(elze, __LINE__);                                                               \
     seq_goto_if_not(COMBINE(elze, __LINE__), (do_else == -1 ? seq_current_thread->do_else : do_else)); \
@@ -123,30 +128,58 @@ int seq_scanf(const char* fmt, ...);
         } while(0);                                                                                        \
     COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
 
-#define seq_load_into_stack(thread_ptr, variable)        \
-        do {                                              \
-            (thread_ptr)->stack.place -= sizeof(variable); \
-            memcpy(&(thread_ptr)->stack.data[(thread_ptr)->stack.place], &variable, sizeof(variable));\
-        } while(0);
+#define seq_load_into_stack(thread_ptr, variable) do { \
+    (thread_ptr)->stack.place -= sizeof(variable);      \
+    memcpy(&(thread_ptr)->stack.data[(thread_ptr)->stack.place], &variable, sizeof(variable));\
+} while(0)
 
 #define seqin(varname) \
     static varname;     \
-    seq_current_thread->stack.place -= sizeof(varname);\
-    seq { \
-        memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
-    }
+    do {                 \
+        seq_current_thread->stack.place -= sizeof(varname);\
+        seq memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
+    } while(0)
 
-#define seqv(varname)                                                                                      \
-    static varname;                                                                                         \
-    if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) {                                         \
-        seq_current_thread->stack.place -= sizeof(varname);                                                   \
-        if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {                                                   \
+
+#define seq_register(varname) do {                                                        \
+    if (seq_current_thread->mem_mode == SEQ_NO_INDEPENDENT_MEMORY) break;                  \
+    seq_current_thread->stack.place -= sizeof(varname);                                     \
+    if (seq_current_thread->counter == 1 || seq_current_thread->mem_mode == SEQ_SAVE_VARS) { \
+        memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
+    } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {                             \
+        memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
+    }                                                                                            \
+} while(0)
+
+#define seqv(varname)                                              \
+    static varname;                                                 \
+    if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) { \
+        seq_current_thread->stack.place -= sizeof(varname);           \
+        if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {           \
             memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
-        } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {                                           \
-            memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));  \
-        }                                                                                                          \
-    }                                                                                                               \
+        } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {   \
+            memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
+        }                                                                  \
+    }                                                                       \
     seq varname
+
+#define seqp(varname)                                              \
+    static *varname;                                                \
+    if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) { \
+        seq_current_thread->stack.place -= sizeof(varname);           \
+        if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {           \
+            memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
+        } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {   \
+            memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
+        }                                                                  \
+    }                                                                       \
+    seq varname
+
+#define seqarr(varname, count, ...)     \
+    static varname[count] = __VA_ARGS__; \
+    seq_register(varname)
+
+//char seqarr(my_array)[] = "foo";
 
 #define seq_for(vardef, cond, increment, ...) \
 vardef;                                        \
@@ -171,6 +204,14 @@ seq_while(cond,                                 \
 SeqThread* seq_current_thread;
 static signed char do_else = -1;
 
+bool seq_next_mem_mode() {
+    if (seq_current_thread->mem_mode >= 2) {
+        seq_current_thread->counter = seq_current_thread->counter_bkp;
+        return false;
+    }
+    return true;
+}
+
 SeqThread seq_thread() {
     SeqThread ret;
     ret.index   = 0;
@@ -178,7 +219,6 @@ SeqThread seq_thread() {
     ret.counter_bkp = 1;
     ret.do_else = 0;
     ret.delay_start = -1;
-    ret.missed = false;
     ret.mem_mode = SEQ_NO_INDEPENDENT_MEMORY;;
     ret.stack.place = SEQ_STACK_SIZE;
     ret.cycle_counter = 0;
@@ -187,12 +227,10 @@ SeqThread seq_thread() {
 
 void seq_start() {
     // Miss a single cycle so that all labels have values before beggining the program
-    seq_current_thread->index = 1;
-    if (seq_current_thread->counter == 1) { 
-        if (seq_current_thread->missed) 
-            seq_current_thread->counter += 1;
-        seq_current_thread->missed = true;
-    }
+    seq_current_thread->index = 2;
+    if (seq_current_thread->counter == 1
+    ||  seq_current_thread->counter == 2)
+        seq_current_thread->counter += 1;
 
     seq_current_thread->stack.place = SEQ_STACK_SIZE;
     if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
@@ -215,13 +253,13 @@ bool seq_check() {
 
 void seq_reset() {
     if (seq_check()) {
-        seq_current_thread->counter = 1;
+        seq_current_thread->counter = 2;
         seq_current_thread->delay_start = -1;
     }
 }
 
 void seq_always_reset() {
-    seq_current_thread->counter = 1;
+    seq_current_thread->counter = 2;
     seq_current_thread->delay_start = -1;
 }
 
@@ -257,8 +295,10 @@ void seq_sleep(double seconds) {
 int64_t seq_get_time_ns() {
     static LARGE_INTEGER frequency;
     static bool initialized = false;
-    QueryPerformanceFrequency(&frequency); 
-    initialized = true;
+    if (!initialized) {
+        QueryPerformanceFrequency(&frequency); 
+        initialized = true;
+    }
 
     LARGE_INTEGER counter;
     QueryPerformanceCounter(&counter);
@@ -285,7 +325,7 @@ int64_t seq_get_time_ns(void) {
 }
 
 #else
-    #error\
+#   error\
     seq_get_time_ns() not implemented for this platform.\
     Define the SEQ_CUSTOM_TIME macro and provide your own implementation of the seq_get_time_ns() function.
 #endif
@@ -322,12 +362,37 @@ void seq_sync_any(SeqThread* a, SeqThread* b) {
     }
 }
 
+void seq_sync_any_of_many(SeqThread* ts, size_t count) {
+    for (int i = 0; i < count; ++i)  ts[i].index += 1;
+    for (int i = 0; i < count; ++i) {
+        if (ts[i].index == ts[i].counter) {
+            for (int j = 0; j < count; ++j) ts[i].counter = ts[i].index+1;
+            return;
+        }
+    }
+}
+
+void seq_sync_all(SeqThread* ts, size_t count) {
+    for (int i = 0; i < count; ++i) ts[i].index += 1;
+    for (int i = 0; i < count; ++i) {
+        if (ts[i].index != ts[i].counter) return;
+    }
+    for (int i = 0; i < count; ++i) ts[i].counter += 1;
+}
+
 #if defined(__unix__)
 
 int seq_set_stdin_nonblocking() {
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     if (flags == -1) return 1;
     if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) return 1;
+    return 0;
+}
+
+int seq_set_stdin_blocking() {
+    int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    if (flags == -1) return 1;
+    if (fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK) == -1) return 1;
     return 0;
 }
 
@@ -369,6 +434,7 @@ on_error:
 #elif defined(_WIN32)
 
 int seq_set_stdin_nonblocking() { return 0; }
+int seq_set_stdin_blocking() { return 0; }
 
 int seq_scanf(const char* fmt, ...) {
     static int ret;
@@ -423,5 +489,14 @@ int seq_scanf(const char* fmt, ...) {
 }
 
 #endif
+
+int sequtil_usleep(long useconds) {
+    #ifdef __unix__
+        return usleep(useconds);
+    #else
+        Sleep(useconds/1000);
+        return 0;
+    #endif
+}
 
 #endif // SEQ_IMPLEMENTATION

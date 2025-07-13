@@ -13,9 +13,6 @@ int main(void) {
 
         seq puts("bim");
 
-        // int label_0 = seq_current_thread->index+1;
-        // static int out; seq_goto_index_if_not(out, j < 3);
-        
         seq_for(int seqv(j) = 0, j < 3, ++j,
             seq puts("bam");
             seq puts("bum");
@@ -24,7 +21,6 @@ int main(void) {
             )
         )
 
-        
         static int x = 4;
         seq_if(x > 0,
             seq puts("x positive!");
@@ -58,7 +54,9 @@ int main(void) {
             seq puts("wiii!");
         )
 
+        seq_sync_both(&thread1, &thread2);
+        seq break;
 
-        sleep(1);
+        sequtil_usleep(1000*1000);
     }
 }

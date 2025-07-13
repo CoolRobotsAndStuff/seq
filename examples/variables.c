@@ -2,7 +2,7 @@
 #define SEQ_IMPLEMENTATION
 #include "../seq.h"
 
-#define TCOUNT 7
+#define TCOUNT 2
 
 int main() {
     SeqThread threads[TCOUNT];
@@ -10,30 +10,44 @@ int main() {
         threads[i] = seq_thread();
     }
 
-    bool finish = false;
-    
-    while (!finish) {
+    while (1) {
         for (int i = 0; i < TCOUNT; ++i) {
-            seq_set_current(&threads[i]);
+            seq_current_thread = &threads[i];
             seq_independent_memory {
-
                 seq_start();
-                int seqv(counter) = 0;
-                int seqv(counter2) = 0;
-                float seqv(my_decimal) = 3.0f;
-                seq_while(counter < 4) {
+
+                char seqarr(my_array,,"goo");
+                int seqv(my_int) = 0;
+
+                static long my_long; 
+                seq_register(my_long);
+                seq my_long = i*100;
+
+                float seqv(my_float) = 3.0f*i;
+                char seqp(my_string) = "hello";
+
+                // seqv(long, my_long) = i*100;
+                // seqv(int, my_int) = 0;
+                // seqv(char*, my_string) = "hello";
+
+                seq_while(my_int < 4, 
                     seq printf("[%d] hi\n", i);
-                    seq counter++;
-                    seq counter2 += 5;
-                    seq my_decimal -= 3.24f;
-                    seq printf("[%d] counter: %d\n", i, counter);
-                    seq printf("[%d] counter2: %d\n", i, counter2);
-                    seq printf("[%d] my_decimal: %f\n", i, my_decimal);
-                }
-                seq finish = 1;
+                    seq my_int++;
+                    seq my_long += 5;
+                    seq my_float -= 3.24f;
+                    seq printf("[%d] my_int: %d\n", i, my_int);
+                    seq printf("[%d] my_long: %ld\n", i, my_long);
+                    seq printf("[%d] my_float: %f\n", i, my_float);
+                    seq printf("[%d] my_string: %s\n", i, my_string);
+                    seq my_array[0] = (char)(my_int+i*5)+'A';
+                    seq printf("[%d] my_array[%zu]: %s\n", i, sizeof(my_array), my_array);
+                )
 
             } // seq_independent_memory
         }
+        seq_sync_all(threads, TCOUNT);
+        seq break;
+        sequtil_usleep(1000000);
     }
-    return 1;
+    return 0;
 }

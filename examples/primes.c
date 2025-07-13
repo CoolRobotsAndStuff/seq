@@ -43,7 +43,10 @@ int main() {
         seq printf("Find closest prime after: ");
         int ret = seq_scanf("%ld", &n);
         seq_if (ret == 0,
-            seq if (getchar() == 'q') return 0;
+            seq if (getchar() == 'q') {
+                seq_set_stdin_blocking();
+                return 0;
+            }
             seq printf("Invalid input\n");
             seq flush_stdin(); // Flush stdin
             seq_reset();
@@ -90,12 +93,10 @@ int main() {
 
         if (pool.next_inactive == 0) {
             // prevent busylooping
-            #ifdef __unix__
-            usleep(1);
-            #else
-            Sleep(1/10000);
-            #endif
+            sequtil_usleep(1);
         } 
     }
+
+    seq_set_stdin_blocking();
     return 0;
 }
