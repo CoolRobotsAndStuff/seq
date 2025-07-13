@@ -6,6 +6,7 @@ int main() {
     SeqThread t = seq_thread();
     seq_current_thread = &t;
     while (1) {
+        seq_start();
         seq puts("hello");
         seq_sleep(1);
         seq puts("world");

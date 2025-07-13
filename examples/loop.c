@@ -33,7 +33,7 @@ int main() {
 
         T2 seq break;
 
-        sequtil_mini_sleep(1);  /* prevent busylooping */
+        sequtil_mini_sleep();  /* prevent busylooping */
     }
     return 0;
 }

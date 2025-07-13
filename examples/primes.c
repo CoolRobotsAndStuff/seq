@@ -34,6 +34,7 @@ int main() {
          " time to compute.");
     puts("You can then calculate smaller numbers like 7000 while"
          " the big computation is running in the background.\n");
+    puts("Input 'q' to quit.")
 
     sequtil_set_stdin_nonblocking();
     SeqThread input_thread = seq_thread();
