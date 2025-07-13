@@ -124,22 +124,22 @@ The concept itself is quite simple. It can be boiled down to:
 #include <stdio.h>
 #include <stdbool.h>
 
-int index;
+int index_;
 int counter;
 
 int main() {
     counter = 1;
     while (true) {
-        index = 0; 
+        index_ = 0; 
 
-        index++;
-        if (index == counter) {
+        index_++;
+        if (index_ == counter) {
             counter++;
             puts("Do something");
         }
 
-        index++;
-        if (index == counter) {
+        index_++;
+        if (index_ == counter) {
             counter++;
             puts("Do something else");
         }
@@ -154,7 +154,7 @@ Adding some more stuff:
 #include <stdio.h>
 #include <stdbool.h>
 
-int index;
+int index_;
 int counter;
 
 int main() {
@@ -162,28 +162,28 @@ int main() {
 
     counter = 1;
     while (true) {
-        index = 0; 
+        index_ = 0; 
 
-        index++;
-        if (index == counter) {
+        index_++;
+        if (index_ == counter) {
             counter++;
             puts("Do something");
         }
 
-        index++;
-        if (index == counter && cycle_count > 1000000000) {
+        index_++;
+        if (index_ == counter && cycle_count > 1000000000) {
             cycle_count = 0;
             counter++; // wait till counter hits n cycles
         }
 
-        index++;
-        if (index == counter) {
+        index_++;
+        if (index_ == counter) {
             counter++;
             puts("Do something else");
         }
 
-        index++;
-        if (index == counter) {
+        index_++;
+        if (index_ == counter) {
             counter = 1; // reset sequence
         }
 
@@ -200,12 +200,12 @@ You can easily imagine substituting cycle_count for a timer. Now add a bit of sy
 #include <stdio.h>
 #include <stdbool.h>
 
-int index;
+int index_;
 int counter;
 
 bool seq_check() {
-    index++;
-    if (index == counter) {
+    index_++;
+    if (index_ == counter) {
         counter++;
         return true;
     }
@@ -215,8 +215,8 @@ bool seq_check() {
 #define seq if (seq_check())
 
 bool seq_wait_until(bool cond) {
-    index++;
-    if (index == counter && cond) {
+    index_++;
+    if (index_ == counter && cond) {
         counter++;
         return true;
     }
@@ -232,7 +232,7 @@ int main() {
 
     counter = 1;
     while (true) {
-        index = 0; 
+        index_ = 0; 
 
         seq puts("Do something");
         seq_wait_until(cycle_count > 1000000000);

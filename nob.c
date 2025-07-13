@@ -61,8 +61,7 @@ bool build(char* target, bool run, bool debug, bool valgrind, bool expand_macros
         "-O3", 
         "-Wall",
         "-Wno-unused-variable",
-        "-Wno-unused-value",
-        "-Wno-builtin-declaration-mismatch"
+        "-Wno-unused-value"
     );
 
     if (expand_macros) {

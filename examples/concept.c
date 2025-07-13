@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-int index;
+int index_;
 int counter;
 
 bool seq_check() {
-    index++;
-    if (index == counter) {
+    index_++;
+    if (index_ == counter) {
         counter++;
         return true;
     }
@@ -16,8 +16,8 @@ bool seq_check() {
 #define seq if (seq_check())
 
 bool seq_wait_until(bool cond) {
-    index++;
-    if (index == counter && cond) {
+    index_++;
+    if (index_ == counter && cond) {
         counter++;
         return true;
     }
@@ -34,7 +34,7 @@ int main() {
 
     counter = 1;
     while (true) {
-        index = 0; 
+        index_ = 0; 
 
         seq puts("Do something");
         seq_wait_until(cycle_count > 1000000000);
