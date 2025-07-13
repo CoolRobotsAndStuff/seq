@@ -1,18 +1,93 @@
-/* Options:
- *  SEQ_ENABLE_STACK
- *  SEQ_STACK_SIZE
- *  SEQ_ADD_USER_DATA
- *  SEQ_MANUAL_NONBLOCKING_STDIN
- *
- *  SEQ_NO_CONTROL_FLOW
- *  SEQ_NO_CYCLE_COUNTER
- *  SEQ_NO_NONBLOCKING_IO_FUNCS
- *  SEQ_NO_TIMING
- *  SEQ_ENABLE_CONTROL_FLOW
- *  SEQ_ENABLE_CYCLE_COUNTER
- *  SEQ_ENABLE_NONBLOCKING_IO_FUNCS
- *  SEQ_ENABLE_TIMING
- *  SEQ_MINIMAL
+/* 
+MIT License
+ 
+Copyright (c) 2025 Alejandro de Ugarriza Mohnblatt
+ 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+ 
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+ 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Example usage:
+
+>----------------------------------------------------<
+#include <stdio.h>
+#define SEQ_IMPLEMENTATION
+#include "../seq.h"
+
+int main() {
+    SeqThread thread1 = seq_thread();
+    SeqThread thread2 = seq_thread();
+
+    #define T1 seq_current_thread = &thread1;
+    #define T2 seq_current_thread = &thread2;
+
+    while (1) {
+        T1 seq_start();      T2 seq_start();
+        T1 seq puts("bim");  T2 seq puts("three");
+        T1 seq_sleep(2);     T2 seq_sleep(1);
+        T1 seq puts("bam");  T2 seq puts("two");
+        T1 seq_sleep(2);     T2 seq_sleep(1);
+        T1 seq puts("bum");  T2 seq puts("one");
+        seq_sync_both(&thread1, &thread2);
+                T1 seq puts("BOOOOM!");
+                T1 seq break;
+
+        sequtil_mini_sleep();
+    }
+    return 0;
+}
+>----------------------------------------------------<
+
+Options (#define them before including the library):
+
+    SEQ_ENABLE_STACK  - Stack is turned off by default since it susbtantially
+                        adds to the memory footprint of each thread.
+    SEQ_STACK_SIZE    - Customize stack size, print it to see default value
+    SEQ_ADD_USER_DATA - Extend SeqThread struct with custom user data under the 
+                        field 'ud'. You must also define the type SeqUserData.
+
+    SEQ_MANUAL_NONBLOCKING_STDIN 
+                      - The included nonblocking IO functions (eg. seq_scanf)
+                        set stdin to nonblocking every time they are called,
+                        and then immediatly revert it back.  This is very
+                        innefficient, so you can turn that functionality off
+                        and manage it yourself with sequtil_set_stdin_blocking()
+                        and sequtil_set_stdin_nonblocking().
+
+    SEQ_NO_CONTROL_FLOW   - Don't include control flow constructs
+                            (seq_if, seq_while, etc.).
+    SEQ_NO_CYCLE_COUNTER  - Don't include cycle counter and the seq_miss_cycles
+                            function. Saves a byte or two.
+    SEQ_NO_NONBLOCKING_IO - Don't include nonblocking input functions
+                            (seq_scanf, etc.).
+    SEQ_NO_TIMING         - Don't include platform deppendent timing functions
+                            (seq_get_time_ns, seq_sleep, etc.).
+
+    SEQ_MINIMAL           - Disables everything except essential functionality.
+                            Equivalent to #defining all SEQ_NO_... options. To
+                            re-enable one or more options you can #define these:
+
+    SEQ_ENABLE_CONTROL_FLOW
+    SEQ_ENABLE_CYCLE_COUNTER
+    SEQ_ENABLE_NONBLOCKING_IO_FUNCS
+    SEQ_ENABLE_TIMING
+
  */
 
 

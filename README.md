@@ -35,8 +35,11 @@ int main() {
 /*                       |                             */
                 T1 seq puts("BOOOOM!");
                 T1 seq break;
+
+        sequtil_mini_sleep(); /* Prevent busylooping. */
     }
     return 0;
+}
 }
 ```
 
@@ -59,7 +62,7 @@ int main() {
     return 0;
 }
 ```
-Check ```examples``` folder for more examples.
+Also check the ```examples``` folder.
 
 Currently timing (seq_sleep, etc.) and some other utilities are only implemented for Windows and Linux. To compile to other platforms you must define the ```SEQ_CUSTOM_TIME``` macro and an implementation for the ```seq_get_time_ns``` function. For example, a possible UNIX implementation:
 
@@ -82,9 +85,17 @@ int main() {
 }
 ```
 
+### About
+
+Seq is a concurrency library for scheduling tasks with delays in a program where there is also code that should run constantly on a loop. You can quickly slap it on a project that needs concurrency without worrying too much about it, and the concept itself can be implemented in any language.
+
+The idea originated as a way to control an Arduino robot with a bunch of servos that should move independently of one another. I then used it on another [robot controller in python](https://github.com/iita-robotica/rescate_laberinto/blob/master/src/flow_control/sequencer.py).
+
+There are also other options for concurrency in c, most notably [protothreads](https://dunkels.com/adam/pt/) and coroutine libraries like [libdill](https://libdill.org/).
+
 ### Running examples
 
-There is a convenient system to compile, run and debug examples on linux. Go to the root of this repo and bootstrap it with:
+There is a convenient system to compile, run and debug examples on Linux. Go to the root of this repo and bootstrap it with:
 ```bash
 cc ./nob.c -o ./nob
 ```
@@ -106,7 +117,7 @@ plus some other stuff. To see more options do
 
 ### Inner workings
 
-The concept itself is quite simple, and it's reminiscent of [protothreads](https://dunkels.com/adam/pt/). It can be boiled down to:
+The concept itself is quite simple. It can be boiled down to:
 
 ```c
 #include <stdio.h>
