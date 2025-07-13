@@ -1,8 +1,6 @@
 # Seq - Flashy single-header concurrency library in C
 
-This library is in beta, the api could change at any time. Do not use this in production, if you use this in production YOUR COMPUTER WILL LITERALLY FUCKING EXPLO... 
-
-but if u just wanna try it dat's fine ```:)```
+> This library is in beta, the api could change at any time. Do not use this in production, if you use this in production YOUR COMPUTER WILL LITERALLY FUCKING EXPLO... but if u just wanna try it dat's fine ```:)```
 
 
 ---
