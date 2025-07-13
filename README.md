@@ -40,7 +40,6 @@ int main() {
     }
     return 0;
 }
-}
 ```
 
 Simpler example:
@@ -89,6 +88,8 @@ int main() {
 
 Seq is a concurrency library for scheduling tasks with delays in a program where there is also code that should run constantly on a loop. You can quickly slap it on a project that needs concurrency without worrying too much about it, and the concept itself can be implemented in any language.
 
+It can be either stackful or stackless depending on what you need (see ```examples/primes.c```). It's very configurable and extendable (see ```examples/minimal.c```). The minimal version if fully cross-platform, and the timing utilities can be easily implemented for the platform of you choice. I plan to add more out-of-the-box support for micro-controllers.
+
 The idea originated as a way to control an Arduino robot with a bunch of servos that should move independently of one another. I then used it on another [robot controller in python](https://github.com/iita-robotica/rescate_laberinto/blob/master/src/flow_control/sequencer.py).
 
 There are also other options for concurrency in c, most notably [protothreads](https://dunkels.com/adam/pt/) and coroutine libraries like [libdill](https://libdill.org/).
@@ -127,6 +128,36 @@ int index;
 int counter;
 
 int main() {
+    counter = 1;
+    while (true) {
+        index = 0; 
+
+        index++;
+        if (index == counter) {
+            counter++;
+            puts("Do something");
+        }
+
+        index++;
+        if (index == counter) {
+            counter++;
+            puts("Do something else");
+        }
+        // Non sequential code can go here
+    }
+}
+```
+
+Adding some more stuff:
+
+```c
+#include <stdio.h>
+#include <stdbool.h>
+
+int index;
+int counter;
+
+int main() {
     long cycle_count = 0;
 
     counter = 1;
@@ -153,8 +184,7 @@ int main() {
 
         index++;
         if (index == counter) {
-            counter++;
-            counter = 1;
+            counter = 1; // reset sequence
         }
 
         cycle_count++;
@@ -163,7 +193,8 @@ int main() {
     }
 }
 ```
-You can easily imagine substituting cycle_count for a timer. Add a bit of syntax sugar:
+
+You can easily imagine substituting cycle_count for a timer. Now add a bit of syntax sugar:
 
 ```c
 #include <stdio.h>
