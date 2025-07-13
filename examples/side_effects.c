@@ -22,7 +22,7 @@ int main(void) {
         seq_sleep(1);
         seq break;
 
-        sequtil_usleep(1);
+        sequtil_mini_sleep(); 
     }
     return 0;
 }

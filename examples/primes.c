@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <time.h>
 
+#define SEQ_ENABLE_STACK
 #define SEQ_IMPLEMENTATION
 #define SEQ_MANUAL_NONBLOCKING_STDIN
 #include "../seq.h"
@@ -28,7 +29,13 @@ void clear_line() {
 void flush_stdin() { for (int c=' ';  c!='\n' && c!=EOF; c=getchar()); }
 
 int main() {
-    seq_set_stdin_nonblocking();
+    puts("\nThis program finds the next prime that comes after any number.");
+    puts("You can input a really high number, like 80000000, that takes a long"
+         " time to compute.");
+    puts("You can then calculate smaller numbers like 7000 while"
+         " the big computation is running in the background.\n");
+
+    sequtil_set_stdin_nonblocking();
     SeqThread input_thread = seq_thread();
     SeqThreadPool pool = {0};
     
@@ -36,7 +43,7 @@ int main() {
         seq_current_thread = &input_thread;
 
         seq_start();
-        seq_miss_cycles(500);
+        seq_miss_cycles(500); // make input thread 500 times less frequent
 
         long seqv(n);
         seq clear_line();
@@ -44,7 +51,7 @@ int main() {
         int ret = seq_scanf("%ld", &n);
         seq_if (ret == 0,
             seq if (getchar() == 'q') {
-                seq_set_stdin_blocking();
+                sequtil_set_stdin_blocking();
                 return 0;
             }
             seq printf("Invalid input\n");
@@ -92,11 +99,10 @@ int main() {
         }
 
         if (pool.next_inactive == 0) {
-            // prevent busylooping
-            sequtil_usleep(1);
-        } 
+            sequtil_mini_sleep(); /* prevent busylooping */
+        }
     }
 
-    seq_set_stdin_blocking();
+    sequtil_set_stdin_blocking();
     return 0;
 }

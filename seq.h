@@ -1,57 +1,130 @@
+/* Options:
+ *  SEQ_ENABLE_STACK
+ *  SEQ_STACK_SIZE
+ *  SEQ_ADD_USER_DATA
+ *  SEQ_MANUAL_NONBLOCKING_STDIN
+ *
+ *  SEQ_NO_CONTROL_FLOW
+ *  SEQ_NO_CYCLE_COUNTER
+ *  SEQ_NO_NONBLOCKING_IO_FUNCS
+ *  SEQ_NO_TIMING
+ *  SEQ_ENABLE_CONTROL_FLOW
+ *  SEQ_ENABLE_CYCLE_COUNTER
+ *  SEQ_ENABLE_NONBLOCKING_IO_FUNCS
+ *  SEQ_ENABLE_TIMING
+ *  SEQ_MINIMAL
+ */
+
+
+// TODO Nonblocking IO for all functions in stdlib
+// TODO Timing for arduino and mac
+
 #ifndef SEQ_H_
 #define SEQ_H_
 
-#include <stdarg.h>
-#include <stdio.h>
+#ifdef SEQ_MINIMAL
+#   define  SEQ_NO_CONTROL_FLOW
+#   define  SEQ_NO_CYCLE_COUNTER
+#   define  SEQ_NO_NONBLOCKING_IO_FUNCS
+#   define  SEQ_NO_TIMING
+#endif
+
+#ifdef SEQ_ENABLE_CONTROL_FLOW
+#   undef SEQ_NO_CONTROL_FLOW
+#endif
+#ifdef SEQ_ENABLE_CYCLE_COUNTER
+#   undef SEQ_NO_CYCLE_COUNTER
+#endif
+#ifdef SEQ_ENABLE_NONBLOCKING_IO_FUNCS
+#   undef SEQ_NO_NONBLOCKING_IO_FUNCS
+#endif
+#ifdef SEQ_ENABLE_TIMING
+#   undef SEQ_NO_TIMING
+#endif
+
 #include <stdbool.h>
-#include <stdint.h>
-#include <limits.h>
-#include <string.h>
+#ifndef SEQ_NO_NONBLOCKING_IO_FUNCS
+#   include <stdarg.h>
+#   include <stdio.h>
+#endif
+#ifndef SEQ_NO_TIMING
+#   include <stdint.h>
+#endif
+#ifdef SEQ_ENABLE_STACK
+#   include <string.h>
+#endif
 
 #ifdef __unix__
-#   include <time.h>
-#   include <unistd.h>
-#   include <errno.h>
-#   include <fcntl.h>
+#   ifndef SEQ_NO_TIMING
+#       include <unistd.h>
+#       include <time.h>
+#   endif
+#   ifndef SEQ_NO_NONBLOCKING_IO_FUNCS
+#       include <unistd.h>
+#       include <errno.h>
+#       include <fcntl.h>
+#   endif
 #endif
 
 #ifdef _WIN32
-#   include <windows.h>
-#   include <conio.h>
+#   if !defined(SEQ_NO_TIMING) || !defined(SEQ_NO_NONBLOCKING_IO_FUNCS)
+#       include <windows.h>
+#   endif
+#   ifndef SEQ_NO_NONBLOCKING_IO_FUNCS
+#       include <conio.h>
+#   endif
 #endif
 
-// TODO Nonblocking IO for all functions in stdlib
-// TODO Option to disable control flow and independent memory for arduino and mac
-// TODO Timing for arduino and mac
+#define SEQ_DISABLE (-100)
 
-#define SEQ_DISABLE INT_MIN
+#ifdef SEQ_ENABLE_STACK
+#   ifndef SEQ_STACK_SIZE
+#       define SEQ_STACK_SIZE 1000
+#   endif
 
-#ifndef SEQ_STACK_SIZE
-#   define SEQ_STACK_SIZE 1000
+    typedef struct {
+        char data[SEQ_STACK_SIZE];
+        size_t place;
+    } SeqStack;
+
+#   define SEQ_RESTORE_VARS          0
+#   define SEQ_SAVE_VARS             1
+#   define SEQ_NO_INDEPENDENT_MEMORY 2
+#   define seq_independent_memory \
+        for (seq_current_thread->mem_mode=0; seq_next_mem_mode(); ++seq_current_thread->mem_mode)
+#else
+#    define seq_independent_memory [ERROR] Define SEQ_ENABLE_STACK to use independent memory.
 #endif
 
-typedef struct {
-    char data[SEQ_STACK_SIZE];
-    size_t place;
-} SeqStack;
-
-#define SEQ_RESTORE_VARS          0
-#define SEQ_SAVE_VARS             1
-#define SEQ_NO_INDEPENDENT_MEMORY 2
-
-
-#define seq_independent_memory \
-    for (seq_current_thread->mem_mode=0; seq_next_mem_mode(); ++seq_current_thread->mem_mode)
 
 typedef struct {
     int index;
     int counter;
+
+#if !defined(SEQ_NO_CYCLE_COUNTER) || defined(SEQ_ENABLE_STACK)
     int counter_bkp;
-    signed char do_else;
+#endif
+
+#ifndef SEQ_NO_TIMING
     int64_t delay_start;
+#endif
+
+#ifndef SEQ_NO_CYCLE_COUNTER
+    unsigned int cycle_counter;
+#endif
+
+#ifndef SEQ_NO_CONTROL_FLOW
+    signed char seq__do_else;
+#endif
+
+#ifdef SEQ_ENABLE_STACK
     SeqStack stack;
     int mem_mode;
-    unsigned int cycle_counter;
+#endif
+
+#ifdef SEQ_ADD_USER_DATA
+    SeqUserData ud;
+#endif
 } SeqThread;
 
 SeqThread seq_thread();
@@ -59,134 +132,14 @@ SeqThread seq_thread();
 void seq_start();
 bool seq_check();
 void seq_reset();
+
+#ifndef SEQ_NO_TIMING
 void seq_sleep(double seconds);
 int64_t seq_get_time_ns(void);
+#endif
 
 int seq_label();
 void seq_goto(int index);
-
-void seq_sync_both(SeqThread* a, SeqThread* b);
-void seq_sync_any(SeqThread* a, SeqThread* b);
-
-int seq_scanf(const char* fmt, ...);
-
-int sequtil_usleep(long useconds);
-
-#define seq if(seq_check())
-
-#define seq_break seq_goto(out)
-
-#define seq_while(cond, ...)                   \
-    do {                                        \
-        int label = seq_current_thread->index+1; \
-        static int out;                           \
-        seq_goto_if_not(out, (cond));              \
-            __VA_ARGS__                             \
-        seq_goto(label);                             \
-        out = seq_current_thread->index+1;            \
-    } while(0);
-
-#define COMBINE1(X,Y) X##Y  // helper
-#define COMBINE(X,Y) COMBINE1(X,Y)
-
-#define seq_if(cond, ...)                                  \
-    static int COMBINE(elze, __LINE__);                     \
-    seq do_else = true;                                      \
-    seq_goto_if_not(COMBINE(elze, __LINE__), (cond));         \
-        do {                                                   \
-            static signed char do_else;                         \
-            __VA_ARGS__                                          \
-        } while(0);                                               \
-        seq {                                                      \
-            if (do_else == -1) seq_current_thread->do_else = false; \
-            else do_else = false;                                    \
-        }                                                             \
-    COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
-
-#define seq_else_if(cond, ...)                                                            \
-    static int COMBINE(elze, __LINE__);                                                    \
-    seq_goto_if_not(COMBINE(elze, __LINE__),                                                \
-                          (do_else == -1 ? seq_current_thread->do_else : do_else) && (cond));\
-        do {                                                                                  \
-            static signed char do_else;                                                               \
-            __VA_ARGS__                                                                         \
-        } while(0);                                                                              \
-        seq {                                                                                     \
-            if (do_else == -1) seq_current_thread->do_else = false;                                \
-            else do_else = false;                                                                   \
-        }                                                                                            \
-    COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
-
-#define seq_elif seq_else_if
-
-#define seq_else(...)                                                                                \
-    static int COMBINE(elze, __LINE__);                                                               \
-    seq_goto_if_not(COMBINE(elze, __LINE__), (do_else == -1 ? seq_current_thread->do_else : do_else)); \
-        do {                                                                                            \
-            static signed char do_else;                                                                         \
-            __VA_ARGS__                                                                                   \
-        } while(0);                                                                                        \
-    COMBINE(elze, __LINE__) = seq_current_thread->index + 1;
-
-#define seq_load_into_stack(thread_ptr, variable) do { \
-    (thread_ptr)->stack.place -= sizeof(variable);      \
-    memcpy(&(thread_ptr)->stack.data[(thread_ptr)->stack.place], &variable, sizeof(variable));\
-} while(0)
-
-#define seqin(varname) \
-    static varname;     \
-    do {                 \
-        seq_current_thread->stack.place -= sizeof(varname);\
-        seq memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
-    } while(0)
-
-
-#define seq_register(varname) do {                                                        \
-    if (seq_current_thread->mem_mode == SEQ_NO_INDEPENDENT_MEMORY) break;                  \
-    seq_current_thread->stack.place -= sizeof(varname);                                     \
-    if (seq_current_thread->counter == 1 || seq_current_thread->mem_mode == SEQ_SAVE_VARS) { \
-        memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
-    } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {                             \
-        memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
-    }                                                                                            \
-} while(0)
-
-#define seqv(varname)                                              \
-    static varname;                                                 \
-    if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) { \
-        seq_current_thread->stack.place -= sizeof(varname);           \
-        if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {           \
-            memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
-        } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {   \
-            memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
-        }                                                                  \
-    }                                                                       \
-    seq varname
-
-#define seqp(varname)                                              \
-    static *varname;                                                \
-    if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) { \
-        seq_current_thread->stack.place -= sizeof(varname);           \
-        if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {           \
-            memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
-        } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {   \
-            memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
-        }                                                                  \
-    }                                                                       \
-    seq varname
-
-#define seqarr(varname, count, ...)     \
-    static varname[count] = __VA_ARGS__; \
-    seq_register(varname)
-
-//char seqarr(my_array)[] = "foo";
-
-#define seq_for(vardef, cond, increment, ...) \
-vardef;                                        \
-seq_while(cond,                                 \
-    __VA_ARGS__                                  \
-    seq {increment;}                              \
-)
 
 #define seq_goto_if_not(dst, cond)                                \
     seq_current_thread->index += 1;                                \
@@ -197,31 +150,208 @@ seq_while(cond,                                 \
             seq_current_thread->counter = dst;                          \
         }                                                                \
     }
+
+void seq_sync_both(SeqThread* a, SeqThread* b);
+void seq_sync_any(SeqThread* a, SeqThread* b);
+
+#ifndef SEQ_NO_CYCLE_COUNTER
+void seq_miss_cycles(unsigned int cycles);
+#endif
+
+#ifndef SEQ_NO_NONBLOCKING_IO_FUNCS
+int sequtil_set_stdin_nonblocking();
+int sequtil_set_stdin_blocking();
+int seq_scanf(const char* fmt, ...);
+#endif
+
+#ifndef SEQ_NO_TIMING
+int sequtil_msleep(long useconds);
+int sequtil_usleep(long useconds);
+int sequtil_mini_sleep();
+#endif
+
+#define seq if(seq_check())
+
+#define seq_wait_until(cond) do {   \
+    seq_current_thread->index++;     \
+    if (seq_current_thread->index == seq_current_thread->counter && (cond)) \
+        seq_current_thread->counter++; \
+} while(0)
+
+#define seq_wait_while(cond) do {   \
+    seq_current_thread->index++;     \
+    if (seq_current_thread->index == seq_current_thread->counter && !(cond)) \
+        seq_current_thread->counter++; \
+} while(0)
+
+
+#ifndef SEQ_NO_CONTROL_FLOW
+    #define seq_break seq_goto(seq__loop_out)
+    #define seq_while(cond, ...)                   \
+        do {                                        \
+            int label = seq_current_thread->index+1; \
+            static int seq__loop_out;                 \
+            seq_goto_if_not(seq__loop_out, (cond));    \
+                __VA_ARGS__                             \
+            seq_goto(label);                             \
+            seq__loop_out = seq_current_thread->index+1;  \
+        } while(0);
+
+    #define SEQ__COMBINE1(X,Y) X##Y  // helper
+    #define SEQ__COMBINE(X,Y) SEQ__COMBINE1(X,Y)
+
+    #define seq_if(cond, ...)                                           \
+        static int SEQ__COMBINE(seq__elze, __LINE__);                    \
+        if (seq__do_else == -1) seq_current_thread->seq__do_else = true;  \
+        else seq__do_else = true;                                          \
+        seq_goto_if_not(SEQ__COMBINE(seq__elze, __LINE__), (cond));         \
+            do {                                                             \
+                static signed char seq__do_else;                              \
+                __VA_ARGS__                                                    \
+            } while(0);                                                         \
+            seq {                                                                \
+                if (seq__do_else == -1) seq_current_thread->seq__do_else = false; \
+                else seq__do_else = false;                                         \
+            }                                                                       \
+        SEQ__COMBINE(seq__elze, __LINE__) = seq_current_thread->index + 1;
+
+    #define seq_else_if(cond, ...)                                                        \
+        static int SEQ__COMBINE(seq__elze, __LINE__);                                      \
+        seq_goto_if_not(                                                                    \
+            SEQ__COMBINE(seq__elze, __LINE__),                                               \
+            (seq__do_else == -1 ? seq_current_thread->seq__do_else : seq__do_else) && (cond)  \
+        );                                                                                     \
+            do {                                                                                \
+                static signed char seq__do_else;                                                 \
+                __VA_ARGS__                                                                       \
+            } while(0);                                                                            \
+            seq {                                                                                   \
+                if (seq__do_else == -1) seq_current_thread->seq__do_else = false;                    \
+                else seq__do_else = false;                                                            \
+            }                                                                                          \
+        SEQ__COMBINE(seq__elze, __LINE__) = seq_current_thread->index + 1;
+
+    #define seq_elif seq_else_if
+
+    #define seq_else(...)                                                      \
+        static int SEQ__COMBINE(seq__elze, __LINE__);                           \
+        seq_goto_if_not(                                                         \
+            SEQ__COMBINE(seq__elze, __LINE__),                                    \
+            (seq__do_else == -1 ? seq_current_thread->seq__do_else : seq__do_else) \
+        );                                                                          \
+            do {                                                                     \
+                static signed char seq__do_else;                                      \
+                __VA_ARGS__                                                            \
+            } while(0);                                                                 \
+        SEQ__COMBINE(seq__elze, __LINE__) = seq_current_thread->index + 1;
+
+    #define seq_for(vardef, cond, increment, ...) \
+        vardef;                                    \
+        seq_while(cond,                             \
+            __VA_ARGS__                              \
+            seq {increment;}                          \
+        )
+
+#endif /* ndef SEQ_NO_CONTROL_FLOW*/
+
+#ifdef SEQ_ENABLE_STACK
+    #define seq_load_into_stack(thread_ptr, variable) do { \
+        (thread_ptr)->stack.place -= sizeof(variable);      \
+        memcpy(&(thread_ptr)->stack.data[(thread_ptr)->stack.place], &variable, sizeof(variable));\
+    } while(0)
+
+    #define seqin(varname) \
+        static varname;     \
+        do {                 \
+            seq_current_thread->stack.place -= sizeof(varname);\
+            seq memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
+        } while(0)
+
+    #define seq_register(varname) do {                                                        \
+        if (seq_current_thread->mem_mode == SEQ_NO_INDEPENDENT_MEMORY) break;                  \
+        seq_current_thread->stack.place -= sizeof(varname);                                     \
+        if (seq_current_thread->counter == 1 || seq_current_thread->mem_mode == SEQ_SAVE_VARS) { \
+            memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
+        } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {                             \
+            memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
+        }                                                                                            \
+    } while(0)
+
+    #define seqv(varname)                                              \
+        static varname;                                                 \
+        if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) { \
+            seq_current_thread->stack.place -= sizeof(varname);           \
+            if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {           \
+                memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
+            } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {   \
+                memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
+            }                                                                  \
+        }                                                                       \
+        seq varname
+    
+    #define seqp(varname)                                              \
+        static *varname;                                                \
+        if (seq_current_thread->mem_mode != SEQ_NO_INDEPENDENT_MEMORY) { \
+            seq_current_thread->stack.place -= sizeof(varname);           \
+            if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {           \
+                memcpy(&seq_current_thread->stack.data[seq_current_thread->stack.place], &varname, sizeof(varname));\
+            } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {   \
+                memcpy(&varname, &seq_current_thread->stack.data[seq_current_thread->stack.place], sizeof(varname));\
+            }                                                                  \
+        }                                                                       \
+        seq varname
+    
+    #define seqarr(varname, count, ...)     \
+        static varname[count] = __VA_ARGS__; \
+        seq_register(varname)
+#else
+    #define seqv(varname) static varname; seq varname
+    #define seqp(varname) static *varname; seq varname
+    #define seqarr(varname, count, ...) static varname[count] = __VA_ARGS__
+#endif // SEQ_ENABLE_STACK
+
+
 #endif // SEQ_H_
 
 #ifdef SEQ_IMPLEMENTATION
 
 SeqThread* seq_current_thread;
-static signed char do_else = -1;
 
-bool seq_next_mem_mode() {
-    if (seq_current_thread->mem_mode >= 2) {
-        seq_current_thread->counter = seq_current_thread->counter_bkp;
-        return false;
+/* dummy value to indicate to control flow code that it's running at the top level */
+#ifndef SEQ_NO_CONTROL_FLOW
+static signed char seq__do_else = -1; 
+#endif
+
+#ifdef SEQ_ENABLE_STACK
+    bool seq_next_mem_mode() {
+        if (seq_current_thread->mem_mode >= 2) {
+            seq_current_thread->counter = seq_current_thread->counter_bkp;
+            return false;
+        }
+        return true;
     }
-    return true;
-}
+#endif
 
 SeqThread seq_thread() {
     SeqThread ret;
     ret.index   = 0;
     ret.counter = 1;
+#if !defined(SEQ_NO_CYCLE_COUNTER) || defined(SEQ_ENABLE_STACK)
     ret.counter_bkp = 1;
-    ret.do_else = 0;
+#endif
+#ifndef SEQ_NO_TIMING
     ret.delay_start = -1;
-    ret.mem_mode = SEQ_NO_INDEPENDENT_MEMORY;;
-    ret.stack.place = SEQ_STACK_SIZE;
+#endif
+#ifndef SEQ_NO_CYCLE_COUNTER
     ret.cycle_counter = 0;
+#endif
+#ifndef SEQ_NO_CONTROL_FLOW
+    ret.seq__do_else = 0;
+#endif
+#ifdef SEQ_ENABLE_STACK
+    ret.mem_mode = SEQ_NO_INDEPENDENT_MEMORY;
+    ret.stack.place = SEQ_STACK_SIZE;
+#endif
     return ret;
 }
 
@@ -232,6 +362,7 @@ void seq_start() {
     ||  seq_current_thread->counter == 2)
         seq_current_thread->counter += 1;
 
+#ifdef SEQ_ENABLE_STACK
     seq_current_thread->stack.place = SEQ_STACK_SIZE;
     if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) {
         seq_current_thread->counter_bkp = seq_current_thread->counter;
@@ -239,7 +370,10 @@ void seq_start() {
     } else if (seq_current_thread->mem_mode == SEQ_RESTORE_VARS) {
          seq_current_thread->counter = seq_current_thread->counter_bkp;
     }
-
+#endif
+#ifdef SEQ_ON_START
+    SEQ_ON_START
+#endif
 }
 
 bool seq_check() {
@@ -254,13 +388,17 @@ bool seq_check() {
 void seq_reset() {
     if (seq_check()) {
         seq_current_thread->counter = 2;
+        #ifndef SEQ_NO_TIMING
         seq_current_thread->delay_start = -1;
+        #endif
     }
 }
 
 void seq_always_reset() {
     seq_current_thread->counter = 2;
+    #ifndef SEQ_NO_TIMING
     seq_current_thread->delay_start = -1;
+    #endif
 }
 
 int seq_label() {
@@ -274,6 +412,7 @@ void seq_goto(int index) {
     }
 }
 
+#ifndef SEQ_NO_TIMING
 void seq_sleep(double seconds) {
     SeqThread* t = seq_current_thread;
     t->index += 1;
@@ -281,6 +420,7 @@ void seq_sleep(double seconds) {
         int64_t nanoseconds = (seconds * 1000.0f * 1000.0f * 1000.0f);
         if (t->delay_start < 0) { 
             t->delay_start = seq_get_time_ns();
+            // printf("started delay at %f seconds\n", t->delay_start/(1000.0f * 1000.0f * 1000.0f));
         }
         if (seq_get_time_ns() - t->delay_start > nanoseconds) {
             t->delay_start = -1;
@@ -288,8 +428,9 @@ void seq_sleep(double seconds) {
         }
     }
 }
+#endif
 
-#ifdef SEQ_CUSTOM_TIME
+#if defined(SEQ_CUSTOM_TIME) || defined(SEQ_NO_TIMING) 
 /* Provided by user. */
 #elif defined(_WIN32)
 int64_t seq_get_time_ns() {
@@ -302,9 +443,10 @@ int64_t seq_get_time_ns() {
 
     LARGE_INTEGER counter;
     QueryPerformanceCounter(&counter);
-    counter.QuadPart *= 1000000000;
-    counter.QuadPart /= frequency.QuadPart;
-    return counter.QuadPart;
+    uint64_t time = counter.QuadPart;
+    time /= frequency.QuadPart;
+    time *= 1000000000;
+    return (int64_t)time;
 }
 
 #elif defined(__unix__)
@@ -330,8 +472,11 @@ int64_t seq_get_time_ns(void) {
     Define the SEQ_CUSTOM_TIME macro and provide your own implementation of the seq_get_time_ns() function.
 #endif
 
+#ifndef SEQ_NO_CYCLE_COUNTER
 void seq_miss_cycles(unsigned int cycles) {
+#ifdef SEQ_ENABLE_STACK
     if (seq_current_thread->mem_mode == SEQ_SAVE_VARS) return;
+#endif
     seq_current_thread->cycle_counter++;
     if (seq_current_thread->cycle_counter < cycles) {
         if (seq_current_thread->counter != SEQ_DISABLE) {
@@ -343,6 +488,7 @@ void seq_miss_cycles(unsigned int cycles) {
         seq_current_thread->cycle_counter = 0;
     }
 }
+#endif /* ndef SEQ_NO_CYCLE_COUNTER */
 
 void seq_sync_both(SeqThread* a, SeqThread* b) {
     a->index += 1;
@@ -380,16 +526,18 @@ void seq_sync_all(SeqThread* ts, size_t count) {
     for (int i = 0; i < count; ++i) ts[i].counter += 1;
 }
 
-#if defined(__unix__)
+#ifdef SEQ_NO_NONBLOCKING_IO_FUNCS
+/* do nothing */
+#elif defined(__unix__)
 
-int seq_set_stdin_nonblocking() {
+int sequtil_set_stdin_nonblocking() {
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     if (flags == -1) return 1;
     if (fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) == -1) return 1;
     return 0;
 }
 
-int seq_set_stdin_blocking() {
+int sequtil_set_stdin_blocking() {
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     if (flags == -1) return 1;
     if (fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK) == -1) return 1;
@@ -433,8 +581,8 @@ on_error:
 
 #elif defined(_WIN32)
 
-int seq_set_stdin_nonblocking() { return 0; }
-int seq_set_stdin_blocking() { return 0; }
+int sequtil_set_stdin_nonblocking() { return 0; }
+int sequtil_set_stdin_blocking() { return 0; }
 
 int seq_scanf(const char* fmt, ...) {
     static int ret;
@@ -490,13 +638,34 @@ int seq_scanf(const char* fmt, ...) {
 
 #endif
 
+#ifndef SEQ_NO_TIMING
 int sequtil_usleep(long useconds) {
     #ifdef __unix__
         return usleep(useconds);
     #else
-        Sleep(useconds/1000);
+        Sleep(useconds / 1000);
         return 0;
     #endif
 }
+
+int sequtil_msleep(long mseconds) {
+    #ifdef __unix__
+        puts("hi");
+        return usleep(mseconds*1000);
+    #else
+        Sleep(mseconds);
+        return 0;
+    #endif
+}
+
+int sequtil_mini_sleep() {
+    #ifdef __unix__
+        return usleep(1);
+    #else
+        Sleep(1);
+        return 0;
+    #endif
+}
+#endif
 
 #endif // SEQ_IMPLEMENTATION

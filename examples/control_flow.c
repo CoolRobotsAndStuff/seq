@@ -57,6 +57,6 @@ int main(void) {
         seq_sync_both(&thread1, &thread2);
         seq break;
 
-        sequtil_usleep(1000*1000);
+        sequtil_msleep(1000);
     }
 }

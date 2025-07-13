@@ -1,4 +1,5 @@
 #include <stdio.h>
+#define SEQ_ENABLE_STACK
 #define SEQ_IMPLEMENTATION
 #include "../seq.h"
 
@@ -47,7 +48,7 @@ int main() {
         }
         seq_sync_all(threads, TCOUNT);
         seq break;
-        sequtil_usleep(1000000);
+        sequtil_msleep(1000);
     }
     return 0;
 }

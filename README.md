@@ -1,9 +1,6 @@
-# Seq - Flashy single-header concurrency library in C
+## Seq - Flashy single-header Concurrency Library in C
 
-> This library is in beta, the api could change at any time. Do not use this in production, if you use this in production YOUR COMPUTER WILL LITERALLY FUCKING EXPLO... but if u just wanna try it dat's fine ```:)```
-
-
----
+> This library is in beta, the api could change at any time, if you use this in production YOUR COMPUTER WILL LITERALLY FUCKING EXPLO... but if u just wanna try it dat's fine ```:)```
 
 ### Usage
 
@@ -85,7 +82,6 @@ int main() {
 }
 ```
 
-
 ### Running examples
 
 There is a convenient system to compile, run and debug examples on linux. Go to the root of this repo and bootstrap it with:
@@ -94,15 +90,15 @@ cc ./nob.c -o ./nob
 ```
 Now you can easily compile and run a single example:
 
-```./nob examples/timing run```
+```./nob examples/primes run```
 
 or all examples:
 
 ```./nob examples run```
 
-and you can crosscompile to windows:
+and you can crosscompile to Windows:
 
-```./nob examples/timing run windows```
+```./nob examples/primes run windows```
 
 plus some other stuff. To see more options do
 

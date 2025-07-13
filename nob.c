@@ -47,14 +47,23 @@ bool build(char* target, bool run, bool debug, bool valgrind, bool expand_macros
         cmd.count = 0;
     }
 
+
     switch (platform) {
         case LINUX:
-            nob_cmd_append(&cmd, "gcc", "-O3", "-Wall", "-Wno-unused-variable", "-Wno-unused-value");
+            nob_cmd_append(&cmd, "gcc");
             break;
         case WINDOWS_64:
-            nob_cmd_append(&cmd, "x86_64-w64-mingw32-gcc", "-O3", "-Wall", "-Wno-unused-variable", "-Wno-unused-value");
+            nob_cmd_append(&cmd, "x86_64-w64-mingw32-gcc");
             break;
     }
+
+    nob_cmd_append(&cmd, 
+        "-O3", 
+        "-Wall",
+        "-Wno-unused-variable",
+        "-Wno-unused-value",
+        "-Wno-builtin-declaration-mismatch"
+    );
 
     if (expand_macros) {
         cmd_append(&cmd, temp_sprintf("%s%s.c", BUILD, target));

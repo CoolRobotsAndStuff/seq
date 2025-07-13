@@ -26,6 +26,8 @@ int main() {
 /*                       |                             */
                 T1 seq puts("BOOOOM!");
                 T1 seq break;
+
+        sequtil_mini_sleep(); /* Prevent busylooping. */
     }
     return 0;
 }

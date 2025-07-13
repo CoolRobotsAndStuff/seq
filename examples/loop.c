@@ -32,6 +32,8 @@ int main() {
         seq_sync_both(&thread1, &thread2);
 
         T2 seq break;
+
+        sequtil_mini_sleep(1);  /* prevent busylooping */
     }
     return 0;
 }

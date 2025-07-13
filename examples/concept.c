@@ -30,6 +30,7 @@ void seq_reset() {
 
 int main() {
     long cycle_count = 0;
+    int i = 0;
 
     counter = 1;
     while (true) {
@@ -39,6 +40,7 @@ int main() {
         seq_wait_until(cycle_count > 1000000000);
         seq cycle_count = 0;
         seq puts("Do something else");
+        seq if (++i > 3) break;
         seq_reset();
 
         cycle_count++;
