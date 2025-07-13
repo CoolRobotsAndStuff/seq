@@ -7,7 +7,7 @@
 void flush_stdin() { for (int c=' ';  c!='\n' && c!=EOF; c=getchar()); }
 
 int main() {
-    puts("Input 'q' to quit.")
+    puts("Input 'q' to quit.");
     while (1) {
         long n;
         printf("Find closest prime after: ");
