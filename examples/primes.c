@@ -99,7 +99,7 @@ int main() {
         }
 
         if (pool.next_inactive == 0) {
-            sequtil_mini_sleep(); /* prevent busylooping */
+            sequtil_usleep(1); /* prevent busylooping, will still busyloop on windows cuz windows is dumb af */
         }
     }
 
