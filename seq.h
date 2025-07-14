@@ -150,6 +150,10 @@ Options (#define them before including the library):
 #   endif
 #endif
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 #define SEQ_DISABLE (-100)
 
 #ifdef SEQ_ENABLE_STACK
@@ -385,6 +389,9 @@ int sequtil_mini_sleep();
     #define seqarr(varname, count, ...) static varname[count] = __VA_ARGS__
 #endif // SEQ_ENABLE_STACK
 
+#if defined(__cplusplus)
+}
+#endif
 
 #endif // SEQ_H_
 
