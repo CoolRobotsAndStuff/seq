@@ -19,7 +19,9 @@ void clear_line() {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo(console, &csbi);
     COORD beggining_of_line = {.X=0, .Y=csbi.dwCursorPosition.Y};
-    FillConsoleOutputCharacter(console, ' ', csbi.dwSize.X, beggining_of_line, NULL);
+    return;
+    DWORD _;
+    FillConsoleOutputCharacter(console, ' ', csbi.dwSize.X, beggining_of_line, &_);
     SetConsoleCursorPosition(console, beggining_of_line);
 #else
     printf("\r\033[K");
@@ -45,7 +47,6 @@ int main() {
 
         seq_start();
         seq_miss_cycles(500); // make input thread 500 times less frequent
-
         long seqv(n);
         seq clear_line();
         seq printf("Find closest prime after: ");
@@ -59,6 +60,7 @@ int main() {
             seq flush_stdin(); // Flush stdin
             seq_reset();
         )
+
 
         seq_if (pool.next_inactive >= SEQ_POOL_CAPACITY,
             seq puts("Too many threads, please wait for one to finish.");
