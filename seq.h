@@ -721,33 +721,39 @@ int seq_scanf(const char* fmt, ...) {
 #endif
 
 #ifndef SEQ_NO_TIMING
+/* You can define implementations for your own platform if you want. */
+#ifdef __unix__
 int sequtil_usleep(long useconds) {
-    #ifdef __unix__
-        return usleep(useconds);
-    #else
-        Sleep(useconds / 1000);
-        return 0;
-    #endif
+    return usleep(useconds);
 }
-
-int sequtil_msleep(long mseconds) {
-    #ifdef __unix__
-        puts("hi");
-        return usleep(mseconds*1000);
-    #else
-        Sleep(mseconds);
-        return 0;
-    #endif
-}
-
-int sequtil_mini_sleep() {
-    #ifdef __unix__
-        return usleep(1);
-    #else
-        Sleep(1);
-        return 0;
-    #endif
+#elif defined(_WIN32)
+int sequtil_usleep(long useconds) {
+    Sleep(useconds / 1000);
+    return 0;
 }
 #endif
+
+#ifdef __unix__
+int sequtil_msleep(long mseconds) {
+    return usleep(mseconds*1000);
+}
+#elif defined(_WIN32)
+int sequtil_msleep(long mseconds) {
+    Sleep(mseconds);
+    return 0;
+}
+#endif
+
+#ifdef __unix__
+int sequtil_mini_sleep() {
+    return usleep(1);
+}
+#elif defined(_WIN32)
+int sequtil_mini_sleep() {
+    Sleep(1);
+    return 0;
+}
+#endif
+#endif // SEQ_NO_TIMING
 
 #endif // SEQ_IMPLEMENTATION
