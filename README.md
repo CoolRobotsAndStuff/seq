@@ -1,10 +1,9 @@
 ## Seq - Flashy single-header Concurrency Library in C
 
-> This library is in beta, the api could change at any time, if you use this in production YOUR COMPUTER WILL LITERALLY FUCKING EXPLO... but if u just wanna try it dat's fine ```:)```
 
-### Usage
+> This library is in beta, the api could change at any time, if you use this in production YOUR COMPUTER WILL LITERALLY FUCKING EXPLO... but if u just wanna try it dat's fine :)
 
-Download the ```seq.h``` file and put it in the same directory as you code.
+Download the `seq.h` file and put it in the same directory as you code.
 
 ```c
 #include <stdio.h>
@@ -102,19 +101,27 @@ cc ./nob.c -o ./nob
 ```
 Now you can easily compile and run a single example:
 
-```./nob examples/primes run```
+```
+./nob examples/primes run
+```
 
 or all examples:
 
-```./nob examples run```
+```
+./nob examples run
+```
 
 and you can crosscompile to Windows:
 
-```./nob examples/primes run windows```
+```
+./nob examples/primes run windows
+```
 
 plus some other stuff. To see more options do
 
-```./nob```
+```
+./nob
+```
 
 ### Inner workings
 
