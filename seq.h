@@ -1,25 +1,17 @@
 /* 
-MIT License
- 
-Copyright (c) 2025 Alejandro de Ugarriza Mohnblatt
- 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
- 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
- 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Seq - Simple Concurrency Library
+
+Copyright (c) 2026 Alejandro de Ugarriza Mohnblatt
+
+This software is licensed under the PolyForm Small Business License 1.0.0
+The full license is attached at the end of this file.
+
+The licence basically means that if you are an idividual or small business (less
+than around  1 million USD  of yearly revenue)  you are free to use,  modify and
+redistribute this file however you want, conforming to the terms of the license.
+
+If your business does not conform to this condition please contact me at
+aledeum.saf@gmail.com to arrange custom licensing.
 
 ---
 
@@ -213,7 +205,7 @@ bool seq_check();
 void seq_reset();
 
 #ifndef SEQ_NO_TIMING
-void seq_sleep(double seconds);
+bool seq_sleep(double seconds);
 int64_t seq_get_time_ns(void);
 #endif
 
@@ -241,6 +233,10 @@ void seq_miss_cycles(unsigned int cycles);
 int sequtil_set_stdin_nonblocking();
 int sequtil_set_stdin_blocking();
 int seq_scanf(const char* fmt, ...);
+void sequtil_clear_line();
+void seq_clear_line();
+void sequtil_flush_stdin();
+void seq_flush_stdin();
 #endif
 
 #ifndef SEQ_NO_TIMING
@@ -495,7 +491,7 @@ void seq_goto(int index) {
 }
 
 #ifndef SEQ_NO_TIMING
-void seq_sleep(double seconds) {
+bool seq_sleep(double seconds) {
     SeqThread* t = seq_current_thread;
     t->index += 1;
     if (t->index == t->counter) { 
@@ -507,8 +503,11 @@ void seq_sleep(double seconds) {
         if (seq_get_time_ns() - t->delay_start > nanoseconds) {
             t->delay_start = -1;
             t->counter += 1;
+            return false;
         }
+        return true;
     }
+    return false;
 }
 #endif
 
@@ -526,8 +525,8 @@ int64_t seq_get_time_ns() {
     LARGE_INTEGER counter;
     QueryPerformanceCounter(&counter);
     uint64_t time = counter.QuadPart;
-    time /= frequency.QuadPart;
     time *= 1000000000;
+    time /= frequency.QuadPart;
     return (int64_t)time;
 }
 
@@ -612,6 +611,16 @@ void seq_sync_all(SeqThread* ts, size_t count) {
 /* do nothing */
 #elif defined(__unix__)
 
+void sequtil_clear_line() {
+    printf("\r\033[K");
+}
+void seq_clear_line() { if (seq_check()) sequtil_clear_line(); }
+
+void sequtil_flush_stdin() {
+    for (int c=' ';  c!='\n' && c!=EOF; c=getchar()); 
+}
+void seq_flush_stdin() { if (seq_check()) sequtil_flush_stdin(); }
+
 int sequtil_set_stdin_nonblocking() {
     int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     if (flags == -1) return 1;
@@ -662,6 +671,22 @@ on_error:
 }
 
 #elif defined(_WIN32)
+
+void sequtil_clear_line() {
+    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(console, &csbi);
+    COORD beggining_of_line = {.X=0, .Y=csbi.dwCursorPosition.Y};
+    DWORD _;
+    FillConsoleOutputCharacter(console, ' ', csbi.dwSize.X, beggining_of_line, &_);
+    SetConsoleCursorPosition(console, beggining_of_line);
+}
+void seq_clear_line() { if (seq_check()) sequtil_clear_line(); }
+
+void sequtil_flush_stdin() {
+    for (int c=' ';  c!='\n' && c!=EOF; c=getchar()); 
+}
+void seq_flush_stdin() { if (seq_check()) sequtil_flush_stdin(); }
 
 int sequtil_set_stdin_nonblocking() { return 0; }
 int sequtil_set_stdin_blocking() { return 0; }
@@ -756,4 +781,130 @@ int sequtil_mini_sleep() {
 #endif
 #endif // SEQ_NO_TIMING
 
+
 #endif // SEQ_IMPLEMENTATION
+
+/*
+# PolyForm Small Business License 1.0.0
+
+<https://polyformproject.org/licenses/small-business/1.0.0>
+
+## Acceptance
+
+In order to get any license under these terms, you must agree
+to them as both strict obligations and conditions to all
+your licenses.
+
+## Copyright License
+
+The licensor grants you a copyright license for the
+software to do everything you might do with the software
+that would otherwise infringe the licensor's copyright
+in it for any permitted purpose.  However, you may
+only distribute the software according to [Distribution
+License](#distribution-license) and make changes or new works
+based on the software according to [Changes and New Works
+License](#changes-and-new-works-license).
+
+## Distribution License
+
+The licensor grants you an additional copyright license
+to distribute copies of the software.  Your license
+to distribute covers distributing the software with
+changes and new works permitted by [Changes and New Works
+License](#changes-and-new-works-license).
+
+## Notices
+
+You must ensure that anyone who gets a copy of any part of
+the software from you also gets a copy of these terms or the
+URL for them above, as well as copies of any plain-text lines
+beginning with `Required Notice:` that the licensor provided
+with the software.  For example:
+
+> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
+
+## Changes and New Works License
+
+The licensor grants you an additional copyright license to
+make changes and new works based on the software for any
+permitted purpose.
+
+## Patent License
+
+The licensor grants you a patent license for the software that
+covers patent claims the licensor can license, or becomes able
+to license, that you would infringe by using the software.
+
+## Fair Use
+
+You may have "fair use" rights for the software under the
+law. These terms do not limit them.
+
+## Small Business
+
+Use of the software for the benefit of your company is use for
+a permitted purpose if your company has fewer than 100 total
+individuals working as employees and independent contractors,
+and less than 1,000,000 USD (2019) total revenue in the prior
+tax year.  Adjust this revenue threshold for inflation according
+to the United States Bureau of Labor Statistics' consumer price
+index for all urban consumers, U.S. city average, for all items,
+not seasonally adjusted, with 1982–1984=100 reference base.
+
+## No Other Rights
+
+These terms do not allow you to sublicense or transfer any of
+your licenses to anyone else, or prevent the licensor from
+granting licenses to anyone else.  These terms do not imply
+any other licenses.
+
+## Patent Defense
+
+If you make any written claim that the software infringes or
+contributes to infringement of any patent, your patent license
+for the software granted under these terms ends immediately. If
+your company makes such a claim, your patent license ends
+immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have
+violated any of these terms, or done anything with the software
+not covered by your licenses, your licenses can nonetheless
+continue if you come into full compliance with these terms,
+and take practical steps to correct past violations, within
+32 days of receiving notice.  Otherwise, all your licenses
+end immediately.
+
+## No Liability
+
+***As far as the law allows, the software comes as is, without
+any warranty or condition, and the licensor will not be liable
+to you for any damages arising out of these terms or the use
+or nature of the software, under any kind of legal claim.***
+
+## Definitions
+
+The **licensor** is the individual or entity offering these
+terms, and the **software** is the software the licensor makes
+available under these terms.
+
+**You** refers to the individual or entity agreeing to these
+terms.
+
+**Your company** is any legal entity, sole proprietorship,
+or other kind of organization that you work for, plus all
+organizations that have control over, are under the control of,
+or are under common control with that organization.  **Control**
+means ownership of substantially all the assets of an entity,
+or the power to direct its management and policies by vote,
+contract, or otherwise.  Control can be direct or indirect.
+
+**Your licenses** are all the licenses granted to you for the
+software under these terms.
+
+**Use** means anything you do with the software requiring one
+of your licenses.
+
+*/
