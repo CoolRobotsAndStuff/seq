@@ -1,7 +1,7 @@
 /* 
 Seq - Simple Concurrency Library
 
-Copyright (c) 2026 Alejandro de Ugarriza Mohnblatt
+Copyright (c) 2025 Alejandro de Ugarriza Mohnblatt
 
 This software is licensed under the PolyForm Small Business License 1.0.0
 The full license is attached at the end of this file.
