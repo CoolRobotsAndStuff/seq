@@ -87,7 +87,7 @@ int main() {
 
 Seq is a concurrency library for scheduling tasks with delays in a program where there is also code that should run constantly on a loop. You can quickly slap it on a project that needs concurrency without worrying too much about it, and the concept itself can be implemented in any language.
 
-It can be either stackful or stackless depending on what you need (see ```examples/primes.c```). It's very configurable and extendable (see ```examples/minimal.c```). The minimal version if fully cross-platform, and the timing utilities can be easily implemented for the platform of you choice. I plan to add more out-of-the-box support for micro-controllers.
+It can be either stackful or stackless depending on what you need (see ```examples/primes.c```). It's very configurable and extendable (see ```examples/minimal.c```). The minimal version is fully cross-platform, and the timing utilities can be easily implemented for the platform of you choice. I plan to add more out-of-the-box support for micro-controllers.
 
 The idea originated as a way to control an Arduino robot with a bunch of servos that should move independently of one another. I then used it on another [robot controller in python](https://github.com/iita-robotica/rescate_laberinto/blob/master/src/flow_control/sequencer.py).
 
