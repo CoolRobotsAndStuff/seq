@@ -200,7 +200,7 @@ typedef struct {
 
 SeqThread seq_thread();
 
-void seq_start();
+bool seq_start();
 bool seq_check();
 void seq_reset();
 
@@ -433,7 +433,8 @@ SeqThread seq_thread() {
     return ret;
 }
 
-void seq_start() {
+bool seq_start() {
+    bool started = seq_current_thread->counter == 1;
     // Miss a single cycle so that all labels have values before beggining the program
     seq_current_thread->index = 2;
     if (seq_current_thread->counter == 1
@@ -452,6 +453,7 @@ void seq_start() {
 #ifdef SEQ_ON_START
     SEQ_ON_START
 #endif
+    return started;
 }
 
 bool seq_check() {
