@@ -13,23 +13,6 @@ typedef struct {
     int next_inactive;
 } SeqThreadPool;
 
-void clear_line() {
-#ifdef _WIN32
-    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    GetConsoleScreenBufferInfo(console, &csbi);
-    COORD beggining_of_line = {.X=0, .Y=csbi.dwCursorPosition.Y};
-    return;
-    DWORD _;
-    FillConsoleOutputCharacter(console, ' ', csbi.dwSize.X, beggining_of_line, &_);
-    SetConsoleCursorPosition(console, beggining_of_line);
-#else
-    printf("\r\033[K");
-#endif
-}
-
-void flush_stdin() { for (int c=' ';  c!='\n' && c!=EOF; c=getchar()); }
-
 int main() {
     puts("\nThis program finds the next prime that comes after any number.");
     puts("You can input a really high number, like 80000000, that takes a long"
@@ -48,7 +31,7 @@ int main() {
         seq_start();
         seq_miss_cycles(500); // make input thread 500 times less frequent
         long seqv(n);
-        seq clear_line();
+        seq_clear_line();
         seq printf("Find closest prime after: ");
         int ret = seq_scanf("%ld", &n);
         seq_if (ret == 0,
@@ -57,7 +40,7 @@ int main() {
                 return 0;
             }
             seq printf("Invalid input\n");
-            seq flush_stdin(); // Flush stdin
+            seq_flush_stdin(); // Flush stdin
             seq_reset();
         )
 
@@ -92,7 +75,7 @@ int main() {
                     )
                 )
                 seq {
-                    clear_line();
+                    sequtil_clear_line();
                     printf("Closest prime after %ld is %ld\n", start, possible_prime);
                     printf("Find closest prime after: ");
                 }
